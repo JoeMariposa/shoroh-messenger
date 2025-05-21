@@ -68,5 +68,8 @@ def webhook():
         return "ok"
 
 if __name__ == "__main__":
+    import nest_asyncio
+    nest_asyncio.apply()
     app.run(host="0.0.0.0", port=5000)
+
 
