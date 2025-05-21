@@ -52,17 +52,17 @@ def index():
     return "Бот запущен."
 
 @app.route(f"/webhook/{TOKEN}", methods=["POST"])
-async def webhook():
+def webhook():
     if request.method == "POST":
         data = request.get_json(force=True)
         update = Update.de_json(data, application.bot)
-        
-        # Обязательная инициализация перед обработкой
+
+        loop = asyncio.get_event_loop()
         if not application.running:
-            await application.initialize()
-        
-        await application.process_update(update)
+            loop.run_until_complete(application.initialize())
+        loop.run_until_complete(application.process_update(update))
         return "ok"
+
 
 # Регистрация команд
 application.add_handler(CommandHandler("start", start))
