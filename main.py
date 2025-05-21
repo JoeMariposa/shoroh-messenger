@@ -75,4 +75,5 @@ application.add_handler(CommandHandler("cast", cast))
 application.add_handler(CommandHandler("help", help_command))
 
 if __name__ == "__main__":
-    app.run(port=5000)
+    app.run(host="0.0.0.0", port=5000)
+
