@@ -2,15 +2,15 @@ from flask import Flask, request
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 import os
-import asyncio
 import nest_asyncio
 
+app = Flask(__name__)
 nest_asyncio.apply()
 
-app = Flask(__name__)
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 application = ApplicationBuilder().token(TOKEN).build()
 
+# Команды
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Соединение установлено. Вы подключены к приёмнику RED-9B.")
 
@@ -46,6 +46,25 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/help - Справка по командам"
     )
 
+# Роуты Flask
+@app.route("/", methods=["GET"])
+def index():
+    return "Бот запущен."
+
+@app.route(f"/webhook/{TOKEN}", methods=["POST"])
+async def webhook():
+    if request.method == "POST":
+        data = request.get_json(force=True)
+        update = Update.de_json(data, application.bot)
+        
+        # Обязательная инициализация перед обработкой
+        if not application.running:
+            await application.initialize()
+        
+        await application.process_update(update)
+        return "ok"
+
+# Регистрация команд
 application.add_handler(CommandHandler("start", start))
 application.add_handler(CommandHandler("echo", echo))
 application.add_handler(CommandHandler("log", log))
@@ -55,21 +74,5 @@ application.add_handler(CommandHandler("archive", archive))
 application.add_handler(CommandHandler("cast", cast))
 application.add_handler(CommandHandler("help", help_command))
 
-@app.route("/", methods=["GET"])
-def index():
-    return "Бот запущен."
-
-@app.route(f"/webhook/{TOKEN}", methods=["POST"])
-def webhook():
-    if request.method == "POST":
-        data = request.get_json(force=True)
-        update = Update.de_json(data, application.bot)
-        asyncio.run(application.process_update(update))
-        return "ok"
-
 if __name__ == "__main__":
-    import nest_asyncio
-    nest_asyncio.apply()
-    app.run(host="0.0.0.0", port=5000)
-
-
+    app.run(port=5000)
