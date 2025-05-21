@@ -3,6 +3,7 @@ from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 import os
 import nest_asyncio
+import asyncio
 
 app = Flask(__name__)
 nest_asyncio.apply()
@@ -53,16 +54,14 @@ def index():
 
 @app.route(f"/webhook/{TOKEN}", methods=["POST"])
 def webhook():
-    if request.method == "POST":
-        data = request.get_json(force=True)
-        update = Update.de_json(data, application.bot)
+    data = request.get_json(force=True)
+    update = Update.de_json(data, application.bot)
 
-        loop = asyncio.get_event_loop()
-        if not application.running:
-            loop.run_until_complete(application.initialize())
-        loop.run_until_complete(application.process_update(update))
-        return "ok"
-
+    loop = asyncio.get_event_loop()
+    if not application.running:
+        loop.run_until_complete(application.initialize())
+    loop.run_until_complete(application.process_update(update))
+    return "ok"
 
 # Регистрация команд
 application.add_handler(CommandHandler("start", start))
@@ -76,4 +75,5 @@ application.add_handler(CommandHandler("help", help_command))
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
+
 
