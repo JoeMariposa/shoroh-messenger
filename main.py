@@ -1,5 +1,5 @@
 from flask import Flask
-from telegram import Update
+from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 import os
 
@@ -18,7 +18,8 @@ async def log(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def pulse(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [["Вперёд"], ["Остаться"], ["Вернуться"]]
-    await update.message.reply_text("Куда двигаться?", reply_markup={"keyboard": keyboard, "resize_keyboard": True})
+    markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+    await update.message.reply_text("Куда двигаться?", reply_markup=markup)
 
 async def code(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Введите скрытый код (например, D-209A):")
