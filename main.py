@@ -1,8 +1,11 @@
 from flask import Flask, request
 from telegram import Update, ReplyKeyboardMarkup
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, Dispatcher
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 import os
 import asyncio
+import nest_asyncio
+
+nest_asyncio.apply()
 
 app = Flask(__name__)
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -57,14 +60,12 @@ def index():
     return "Бот запущен."
 
 @app.route(f"/webhook/{TOKEN}", methods=["POST"])
-async def webhook():
+def webhook():
     if request.method == "POST":
         data = request.get_json(force=True)
         update = Update.de_json(data, application.bot)
-        await application.process_update(update)
+        asyncio.run(application.process_update(update))
         return "ok"
 
 if __name__ == "__main__":
-    import nest_asyncio
-    nest_asyncio.apply()
     app.run(port=5000)
