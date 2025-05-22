@@ -1,0 +1,42 @@
+# Python-specific ignores
+*.pyc
+__pycache__/
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+*.egg
+
+# Virtual environments
+venv/
+env/
+.venv/
+.env
+
+# Local databases (e.g., SQLite for logs)
+*.db
+logs.db
+
+# Environment variables and secrets
+.env
+*.env
+*.secret
+
+# IDE and editor files
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# macOS and Linux system files
+.DS_Store
+*.swp
+*.swo
+
+# Render-specific ignores
+*.log
+node_modules/  # In case Render misinterprets as Node.js
+
+# Miscellaneous
+*.bak
+*.tmp
