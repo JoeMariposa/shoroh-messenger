@@ -1,6 +1,6 @@
 from flask import Flask, request
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, ContextTypes, ConversationHandler, MessageHandler, filters
+from telegram.ext import Application, CommandHandler, ContextTypes, ConversationHandler, MessageHandler, filters, CallbackQueryHandler
 import os
 import asyncio
 import sqlite3
@@ -156,7 +156,7 @@ telegram_app.add_handler(ConversationHandler(
     states={AWAITING_LOG: [MessageHandler(filters.TEXT & ~filters.COMMAND, save_log)]},
     fallbacks=[CommandHandler("cancel", cancel)]
 ))
-telegram_app.add_handler(telegram.ext.CallbackQueryHandler(handle_callback))
+telegram_app.add_handler(CallbackQueryHandler(handle_callback))  # Исправлено: убрано "telegram.ext"
 
 # Flask webhook
 @app.route("/", methods=["GET"])
