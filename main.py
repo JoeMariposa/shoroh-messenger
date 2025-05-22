@@ -91,16 +91,15 @@ async def callback_query(update: Update, context):
         await query.message.reply_text(f"{query.data}: {LOGS[query.data]}")
 
 # Register handlers
-application.add_handler(CommandHandler("вход", start))
-application.add_handler(CommandHandler("эхо", echo))
-application.add_handler(CommandHandler("лог", log))
-application.add_handler(CommandHandler("пульс", pulse))
-application.add_handler(CommandHandler("код", code))
-application.add_handler(CommandHandler("архив", archive))
-application.add_handler(CommandHandler("частота", frequency))
-application.add_handler(CommandHandler("помощь", help_cmd))
-application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_submission))
-application.add_handler(CallbackQueryHandler(callback_query))
+application.add_handler(CommandHandler("start", start))
+application.add_handler(CommandHandler("echo", echo))
+application.add_handler(CommandHandler("log", log))
+application.add_handler(CommandHandler("pulse", pulse))
+application.add_handler(CommandHandler("code", code))
+application.add_handler(CommandHandler("archive", archive))
+application.add_handler(CommandHandler("cast", cast))
+application.add_handler(CommandHandler("help", help_command))
+
 
 @app.route(f"/{TOKEN}", methods=["POST"])
 async def receive_update():
