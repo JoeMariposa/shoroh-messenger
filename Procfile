@@ -1,1 +1,1 @@
-web: gunicorn main:app
+web: gunicorn --worker-class uvicorn.workers.UvicornWorker main:app
