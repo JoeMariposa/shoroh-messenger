@@ -194,8 +194,10 @@ def webhook():
         update = Update.de_json(data, telegram_app.bot)
         if update:
             logger.info(f"Processing update: {update}")
-            loop = asyncio.get_event_loop()
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
             loop.run_until_complete(telegram_app.process_update(update))
+            loop.close()
         else:
             logger.info("No update found in request")
         return "ok"
@@ -206,8 +208,10 @@ def webhook():
 # Запуск вебхука и бота
 def set_webhook():
     logger.info("Setting webhook")
-    loop = asyncio.get_event_loop()
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
     loop.run_until_complete(telegram_app.bot.set_webhook(url=f"https://shoroh-messenger.onrender.com/webhook/{TOKEN}"))
+    loop.close()
     logger.info("Webhook set")
 
 if __name__ == "__main__":
