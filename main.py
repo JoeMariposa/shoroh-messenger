@@ -1,3 +1,4 @@
+import sys
 from flask import Flask, request
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, ContextTypes, ConversationHandler, MessageHandler, filters, CallbackQueryHandler
@@ -7,19 +8,24 @@ import sqlite3
 import logging
 import random
 
-# Настройка логирования
-logging.basicConfig(level=logging.INFO, filename='bot.log', format='%(asctime)s - %(levelname)s - %(message)s')
+# Логгирование
+logging.basicConfig(level=logging.INFO, stream=sys.stdout, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 # Проверка токена
 TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 if not TOKEN:
-    logging.error("TELEGRAM_BOT_TOKEN is not set!")
+    logger.error("TELEGRAM_BOT_TOKEN is not set!")
     raise ValueError("TELEGRAM_BOT_TOKEN is not set!")
 
 app = Flask(__name__)
 
+# Инициализация Telegram Application
+telegram_app = Application.builder().token(TOKEN).build()
+
 # Инициализация SQLite
 def init_db():
+    logger.info("Initializing database")
     conn = sqlite3.connect("logs.db")
     c = conn.cursor()
     c.execute("CREATE TABLE IF NOT EXISTS logs (id TEXT PRIMARY KEY, content TEXT)")
@@ -29,6 +35,7 @@ def init_db():
     c.execute("INSERT OR IGNORE INTO logs (id, content) VALUES (?, ?)", ("LOG 03", "Last contact with unit RED-9B at 1800."))
     conn.commit()
     conn.close()
+    logger.info("Database initialized")
 
 def get_latest_log():
     conn = sqlite3.connect("logs.db")
@@ -58,26 +65,26 @@ AWAITING_LOG = 0
 
 # Обработчики команд
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    logging.info(f"Received /start command from chat {update.effective_chat.id}")
+    logger.info(f"Received /start command from chat {update.effective_chat.id}")
     await update.message.reply_text(
         "Соединение установлено. Вы подключены к приёмнику RED-9B.\n"
         "Для помощи: /help"
     )
 
 async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    logging.info(f"Received /echo command from chat {update.effective_chat.id}")
+    logger.info(f"Received /echo command from chat {update.effective_chat.id}")
     if random.random() < 0.8:
         await update.message.reply_text("Связь стабильна. Помех: 1.3%. Переход возможен.")
     else:
         await update.message.reply_text("Пульсация нарушена. Предупреждение: активность слева.")
 
 async def log(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    logging.info(f"Received /log command from chat {update.effective_chat.id}")
+    logger.info(f"Received /log command from chat {update.effective_chat.id}")
     latest_log = get_latest_log()
     await update.message.reply_text(f"Последняя передача: {latest_log}")
 
 async def pulse(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    logging.info(f"Received /pulse command from chat {update.effective_chat.id}")
+    logger.info(f"Received /pulse command from chat {update.effective_chat.id}")
     keyboard = [
         [
             InlineKeyboardButton("Вперед", callback_data="vote_forward"),
@@ -92,7 +99,7 @@ async def pulse(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def code(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    logging.info(f"Received /code command from chat {update.effective_chat.id}")
+    logger.info(f"Received /code command from chat {update.effective_chat.id}")
     code = " ".join(context.args) if context.args else ""
     if code == "D-209A":
         await update.message.reply_text("Код принят. Спец-лог: Секретный сигнал RED-9B активирован.")
@@ -100,31 +107,31 @@ async def code(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Сбой: Неверный код.")
 
 async def archive(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    logging.info(f"Received /archive command from chat {update.effective_chat.id}")
+    logger.info(f"Received /archive command from chat {update.effective_chat.id}")
     logs = get_all_logs()
     keyboard = [[InlineKeyboardButton(log, callback_data=log)] for log in logs.keys()]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text("Доступные архивные логи:", reply_markup=reply_markup)
 
 async def cast(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    logging.info(f"Received /cast command from chat {update.effective_chat.id}")
+    logger.info(f"Received /cast command from chat {update.effective_chat.id}")
     await update.message.reply_text("Хотите передать свою запись в эфир? Опишите, что вы видели или слышали.")
     return AWAITING_LOG
 
 async def save_log(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    logging.info(f"Saving log from chat {update.effective_chat.id}")
+    logger.info(f"Saving log from chat {update.effective_chat.id}")
     chat_id = update.effective_chat.id
     save_submission(chat_id, update.message.text)
     await update.message.reply_text("Ваша запись сохранена в эфире.")
     return ConversationHandler.END
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    logging.info(f"Received /cancel command from chat {update.effective_chat.id}")
+    logger.info(f"Received /cancel command from chat {update.effective_chat.id}")
     await update.message.reply_text("Передача отменена.")
     return ConversationHandler.END
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    logging.info(f"Received /help command from chat {update.effective_chat.id}")
+    logger.info(f"Received /help command from chat {update.effective_chat.id}")
     help_text = (
         "/start — Подключиться к эфиру\n"
         "/echo — Проверка сигнала\n"
@@ -138,14 +145,14 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(help_text)
 
 async def unknown(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    logging.info(f"Received unknown command from chat {update.effective_chat.id}")
+    logger.info(f"Received unknown command from chat {update.effective_chat.id}")
     await update.message.reply_text("Неизвестная команда. Используйте /help.")
 
 # Обработчик inline-кнопок
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     data = query.data
-    logging.info(f"Received callback query: {data}")
+    logger.info(f"Received callback query: {data}")
     await query.answer()
     logs = get_all_logs()
     if data.startswith("vote_"):
@@ -154,8 +161,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data in logs:
         await query.message.reply_text(f"{data}: {logs[data]}")
 
-# Инициализация Telegram Application
-telegram_app = Application.builder().token(TOKEN).build()
+# Регистрация обработчиков
 telegram_app.add_handler(CommandHandler("start", start))
 telegram_app.add_handler(CommandHandler("echo", echo))
 telegram_app.add_handler(CommandHandler("log", log))
@@ -171,49 +177,43 @@ telegram_app.add_handler(ConversationHandler(
 ))
 telegram_app.add_handler(CallbackQueryHandler(handle_callback))
 
-# Flask webhook
+# Flask webhook (синхронная функция)
 @app.route("/", methods=["GET"])
 def index():
-    logging.info("Received request to /")
+    logger.info("Received request to /")
     return "Bot is running."
 
 @app.route(f"/webhook/{TOKEN}", methods=["POST"])
-async def webhook():
+def webhook():
     try:
-        logging.info("Received webhook request")
+        logger.info("Received webhook request")
         data = request.get_json(force=True)
         if not data:
-            logging.info("Empty webhook request")
+            logger.info("Empty webhook request")
             return "ok"
         update = Update.de_json(data, telegram_app.bot)
         if update:
-            logging.info(f"Processing update: {update}")
-            await telegram_app.process_update(update)
+            logger.info(f"Processing update: {update}")
+            loop = asyncio.get_event_loop()
+            loop.run_until_complete(telegram_app.process_update(update))
         else:
-            logging.info("No update found in request")
+            logger.info("No update found in request")
         return "ok"
     except Exception as e:
-        logging.error(f"Webhook error: {e}")
+        logger.error(f"Webhook error: {e}")
         return "ok"
 
-# Запуск
-async def run():
-    logging.info("Starting application")
-    init_db()  # Инициализация БД
-    await telegram_app.initialize()
-    logging.info("Application initialized")
-    await telegram_app.start()
-    logging.info("Application started")
-    # Установка вебхука
-    await telegram_app.bot.set_webhook(url=f"https://shoroh-messenger.onrender.com/webhook/{TOKEN}")
-    logging.info("Webhook set")
+# Запуск вебхука и бота
+def set_webhook():
+    logger.info("Setting webhook")
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(telegram_app.bot.set_webhook(url=f"https://shoroh-messenger.onrender.com/webhook/{TOKEN}"))
+    logger.info("Webhook set")
 
 if __name__ == "__main__":
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(run())
-    # Запуск через uvicorn
-    import uvicorn
+    init_db()
+    set_webhook()
+    logger.info("Starting bot with webhook")
     port = int(os.environ.get("PORT", 5000))
-    logging.info(f"Starting uvicorn on port {port}")
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0", port=port)
 
