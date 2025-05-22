@@ -59,7 +59,7 @@ AWAITING_LOG = 0
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "Соединение установлено. Вы подключены к приёмнику RED-9B.\n"
-        "Для помощи: /помощь"
+        "Для помощи: /help"
     )
 
 async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -115,19 +115,19 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     help_text = (
-        "/вход — Подключиться к эфиру\n"
-        "/эхо — Проверка сигнала\n"
-        "/лог — Последняя передача\n"
-        "/пульс — Голосование за направление\n"
-        "/код <код> — Ввод скрытого сигнала\n"
-        "/архив — Доступ к архивным логам\n"
-        "/частота — Отправка собственного лога\n"
-        "/помощь — Справка по командам"
+        "/start — Подключиться к эфиру\n"
+        "/echo — Проверка сигнала\n"
+        "/log — Последняя передача\n"
+        "/pulse — Голосование за направление\n"
+        "/code <код> — Ввод скрытого сигнала\n"
+        "/archive — Доступ к архивным логам\n"
+        "/cast — Отправка собственного лога\n"
+        "/help — Справка по командам"
     )
     await update.message.reply_text(help_text)
 
 async def unknown(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Неизвестная команда. Используйте /помощь.")
+    await update.message.reply_text("Неизвестная команда. Используйте /help.")
 
 # Обработчик inline-кнопок
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -143,16 +143,16 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # Инициализация Telegram Application
 telegram_app = Application.builder().token(TOKEN).build()
-telegram_app.add_handler(CommandHandler("вход", start))
-telegram_app.add_handler(CommandHandler("эхо", echo))
-telegram_app.add_handler(CommandHandler("лог", log))
-telegram_app.add_handler(CommandHandler("пульс", pulse))
-telegram_app.add_handler(CommandHandler("код", code))
-telegram_app.add_handler(CommandHandler("архив", archive))
-telegram_app.add_handler(CommandHandler("помощь", help_command))
+telegram_app.add_handler(CommandHandler("start", start))
+telegram_app.add_handler(CommandHandler("echo", echo))
+telegram_app.add_handler(CommandHandler("log", log))
+telegram_app.add_handler(CommandHandler("pulse", pulse))
+telegram_app.add_handler(CommandHandler("code", code))
+telegram_app.add_handler(CommandHandler("archive", archive))
+telegram_app.add_handler(CommandHandler("help", help_command))
 telegram_app.add_handler(MessageHandler(filters.COMMAND, unknown))
 telegram_app.add_handler(ConversationHandler(
-    entry_points=[CommandHandler("частота", cast)],
+    entry_points=[CommandHandler("cast", cast)],
     states={AWAITING_LOG: [MessageHandler(filters.TEXT & ~filters.COMMAND, save_log)]},
     fallbacks=[CommandHandler("cancel", cancel)]
 ))
@@ -182,7 +182,7 @@ async def run():
     init_db()  # Инициализация БД
     await telegram_app.initialize()
     await telegram_app.start()
-    # Установка вебхука (готовая строка)
+    # Установка вебхука
     await telegram_app.bot.set_webhook(url=f"https://shoroh-messenger.onrender.com/webhook/{TOKEN}")
 
 if __name__ == "__main__":
