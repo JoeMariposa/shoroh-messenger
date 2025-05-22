@@ -9,7 +9,7 @@ import random
 import traceback
 
 # Настройка логирования
-logging.basicConfig(level=logging.INFO, filename='bot.log', format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, stream=sys.stdout, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 # Проверка токена
@@ -175,7 +175,7 @@ telegram_app.add_handler(ConversationHandler(
 ))
 telegram_app.add_handler(CallbackQueryHandler(handle_callback))
 
-# Flask webhook (временно отключено для теста с polling)
+# Flask webhook (оставлено для совместимости, но не используется с polling)
 @app.route("/", methods=["GET"])
 def index():
     logger.info("Received request to /")
@@ -200,7 +200,7 @@ async def webhook():
         logger.error(f"Webhook error: {str(e)} with traceback: {traceback.format_exc()}")
         return "ok"
 
-# Запуск с polling для теста
+# Запуск с polling
 async def run():
     logger.info("Starting application")
     init_db()  # Инициализация БД
@@ -208,12 +208,10 @@ async def run():
     logger.info("Application initialized")
     await telegram_app.start()
     logger.info("Application started")
-    # Временно используем polling вместо вебхука
     logger.info("Starting polling")
     await telegram_app.run_polling(allowed_updates=["message", "callback_query"])
 
 if __name__ == "__main__":
-    # Запускаем приложение
     logger.info("Starting bot with polling")
     asyncio.run(run())
 
