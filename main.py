@@ -1,15 +1,12 @@
-import sys
-from flask import Flask, request
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, ContextTypes, ConversationHandler, MessageHandler, filters, CallbackQueryHandler
 import os
-import asyncio
 import sqlite3
 import logging
 import random
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CommandHandler, ContextTypes, ConversationHandler, MessageHandler, filters, CallbackQueryHandler
 
 # Логгирование
-logging.basicConfig(level=logging.INFO, stream=sys.stdout, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 # Проверка токена
@@ -17,11 +14,6 @@ TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 if not TOKEN:
     logger.error("TELEGRAM_BOT_TOKEN is not set!")
     raise ValueError("TELEGRAM_BOT_TOKEN is not set!")
-
-app = Flask(__name__)
-
-# Инициализация Telegram Application
-telegram_app = Application.builder().token(TOKEN).build()
 
 # Инициализация SQLite
 def init_db():
@@ -161,63 +153,37 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data in logs:
         await query.message.reply_text(f"{data}: {logs[data]}")
 
-# Регистрация обработчиков
-telegram_app.add_handler(CommandHandler("start", start))
-telegram_app.add_handler(CommandHandler("echo", echo))
-telegram_app.add_handler(CommandHandler("log", log))
-telegram_app.add_handler(CommandHandler("pulse", pulse))
-telegram_app.add_handler(CommandHandler("code", code))
-telegram_app.add_handler(CommandHandler("archive", archive))
-telegram_app.add_handler(CommandHandler("help", help_command))
-telegram_app.add_handler(MessageHandler(filters.COMMAND, unknown))
-telegram_app.add_handler(ConversationHandler(
-    entry_points=[CommandHandler("cast", cast)],
-    states={AWAITING_LOG: [MessageHandler(filters.TEXT & ~filters.COMMAND, save_log)]},
-    fallbacks=[CommandHandler("cancel", cancel)]
-))
-telegram_app.add_handler(CallbackQueryHandler(handle_callback))
-
-# Flask webhook (синхронная функция)
-@app.route("/", methods=["GET"])
-def index():
-    logger.info("Received request to /")
-    return "Bot is running."
-
-@app.route(f"/webhook/{TOKEN}", methods=["POST"])
-def webhook():
-    try:
-        logger.info("Received webhook request")
-        data = request.get_json(force=True)
-        if not data:
-            logger.info("Empty webhook request")
-            return "ok"
-        update = Update.de_json(data, telegram_app.bot)
-        if update:
-            logger.info(f"Processing update: {update}")
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            loop.run_until_complete(telegram_app.process_update(update))
-            loop.close()
-        else:
-            logger.info("No update found in request")
-        return "ok"
-    except Exception as e:
-        logger.error(f"Webhook error: {e}")
-        return "ok"
-
-# Запуск вебхука и бота
-def set_webhook():
-    logger.info("Setting webhook")
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    loop.run_until_complete(telegram_app.bot.set_webhook(url=f"https://shoroh-messenger.onrender.com/webhook/{TOKEN}"))
-    loop.close()
-    logger.info("Webhook set")
+# Application
+def main():
+    init_db()
+    app = Application.builder().token(TOKEN).build()
+    
+    # Регистрация обработчиков
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("echo", echo))
+    app.add_handler(CommandHandler("log", log))
+    app.add_handler(CommandHandler("pulse", pulse))
+    app.add_handler(CommandHandler("code", code))
+    app.add_handler(CommandHandler("archive", archive))
+    app.add_handler(CommandHandler("help", help_command))
+    app.add_handler(MessageHandler(filters.COMMAND, unknown))
+    app.add_handler(ConversationHandler(
+        entry_points=[CommandHandler("cast", cast)],
+        states={AWAITING_LOG: [MessageHandler(filters.TEXT & ~filters.COMMAND, save_log)]},
+        fallbacks=[CommandHandler("cancel", cancel)]
+    ))
+    app.add_handler(CallbackQueryHandler(handle_callback))
+    
+    # Запуск webhook-сервера
+    logger.info("Starting webhook server")
+    app.run_webhook(
+        listen="0.0.0.0",
+        port=int(os.environ.get("PORT", 5000)),
+        webhook_url=f"https://shoroh-messenger.onrender.com/webhook/{TOKEN}",
+        url_path=f"/webhook/{TOKEN}",
+    )
+    logger.info("Webhook server started")
 
 if __name__ == "__main__":
-    init_db()
-    set_webhook()
-    logger.info("Starting bot with webhook")
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    main()
 
