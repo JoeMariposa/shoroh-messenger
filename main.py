@@ -1,35 +1,32 @@
 import logging
 import random
 import os
-import asyncio
 from flask import Flask, request
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, ConversationHandler, MessageHandler, filters, CallbackQueryHandler
+from telegram.ext import Application, CommandHandler, ContextTypes, ConversationHandler, MessageHandler, filters, CallbackQueryHandler
 import psycopg2
 
-# Настройка логирования
+# Логирование
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger()
 
-# Проверка токена
+# Переменные среды
 BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
+DATABASE_URL = os.environ.get("DATABASE_URL")
+
 if not BOT_TOKEN:
     raise ValueError("TELEGRAM_BOT_TOKEN is not set!")
-
-# Подключение к PostgreSQL
-DATABASE_URL = os.environ.get("DATABASE_URL")
 if not DATABASE_URL:
     raise ValueError("DATABASE_URL is not set!")
 
 app_flask = Flask(__name__)
 
-# PostgreSQL
+# Инициализация БД
 def init_db():
     conn = psycopg2.connect(DATABASE_URL)
     c = conn.cursor()
     c.execute("CREATE TABLE IF NOT EXISTS logs (id TEXT PRIMARY KEY, content TEXT)")
     c.execute("CREATE TABLE IF NOT EXISTS submissions (chat_id TEXT, content TEXT)")
-    # Начальные данные
     c.execute("INSERT INTO logs (id, content) VALUES ('LOG 01', 'Transmission: Signal detected at 0300 hours.') ON CONFLICT DO NOTHING")
     c.execute("INSERT INTO logs (id, content) VALUES ('LOG 02', 'Anomaly reported in sector 7.') ON CONFLICT DO NOTHING")
     c.execute("INSERT INTO logs (id, content) VALUES ('LOG 03', 'Last contact with unit RED-9B at 1800.') ON CONFLICT DO NOTHING")
@@ -103,7 +100,7 @@ RESPONSES = {
 
 AWAITING_CAST = 0
 
-# Обработчики
+# Хендлеры
 async def random_reply(update: Update, context: ContextTypes.DEFAULT_TYPE, command: str):
     logger.info(f"Command /{command} received from {update.message.from_user.id}")
     await update.message.reply_text(random.choice(RESPONSES[command]))
@@ -180,44 +177,37 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         content = result[0] if result else "Transmission test"
         await query.message.reply_text(f"{data}: {content}")
 
-# Инициализация
+# Инициализация базы (создание таблиц)
 init_db()
-app = ApplicationBuilder().token(BOT_TOKEN).build()
-app.add_handler(CommandHandler("start", start))
-app.add_handler(CommandHandler("echo", echo))
-app.add_handler(CommandHandler("log", log))
-app.add_handler(CommandHandler("pulse", pulse))
-app.add_handler(CommandHandler("help", help_command))
-app.add_handler(CommandHandler("archive", archive))
-app.add_handler(CommandHandler("cast", cast))
-app.add_handler(CommandHandler("code", code))
-app.add_handler(ConversationHandler(
+
+# Настройка Telegram Application (без запуска event loop)
+application = Application.builder().token(BOT_TOKEN).build()
+application.add_handler(CommandHandler("start", start))
+application.add_handler(CommandHandler("echo", echo))
+application.add_handler(CommandHandler("log", log))
+application.add_handler(CommandHandler("pulse", pulse))
+application.add_handler(CommandHandler("help", help_command))
+application.add_handler(CommandHandler("archive", archive))
+application.add_handler(CommandHandler("cast", cast))
+application.add_handler(CommandHandler("code", code))
+application.add_handler(ConversationHandler(
     entry_points=[CommandHandler("cast", cast)],
     states={AWAITING_CAST: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_cast_message)]},
     fallbacks=[]
 ))
-app.add_handler(CallbackQueryHandler(button_callback))
+application.add_handler(CallbackQueryHandler(button_callback))
 
-# Webhook для Render
+# Flask эндпоинты
 @app_flask.route("/", methods=["GET"])
 def index():
     return "Bot is running."
 
 @app_flask.route(f"/webhook/{BOT_TOKEN}", methods=["POST"])
 def webhook():
-    update = Update.de_json(request.get_json(), app.bot)
-    asyncio.run_coroutine_threadsafe(app.process_update(update), loop=asyncio.get_event_loop())
+    update = Update.de_json(request.get_json(force=True), application.bot)
+    application.create_task(application.process_update(update))
     return "ok"
 
-# Инициализация Telegram приложения
-async def init_telegram():
-    await app.initialize()
-    await app.start()
-    await app.bot.set_webhook(url=f"https://shoroh-messenger.onrender.com/webhook/{BOT_TOKEN}")
-
-# Запуск
+# Запуск Flask
 if __name__ == "__main__":
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(init_telegram())
     app_flask.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
-
