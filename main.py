@@ -5,7 +5,7 @@ import asyncio
 from flask import Flask, request
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, ConversationHandler, MessageHandler, filters, CallbackQueryHandler
-import sqlite3
+import psycopg2
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -16,29 +16,38 @@ BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 if not BOT_TOKEN:
     raise ValueError("TELEGRAM_BOT_TOKEN is not set!")
 
+# Подключение к PostgreSQL
+DATABASE_URL = os.environ.get("DATABASE_URL")
+if not DATABASE_URL:
+    raise ValueError("DATABASE_URL is not set!")
+
 app_flask = Flask(__name__)
 
-# SQLite
+# PostgreSQL
 def init_db():
-    conn = sqlite3.connect("logs.db")
+    conn = psycopg2.connect(DATABASE_URL)
     c = conn.cursor()
     c.execute("CREATE TABLE IF NOT EXISTS logs (id TEXT PRIMARY KEY, content TEXT)")
     c.execute("CREATE TABLE IF NOT EXISTS submissions (chat_id TEXT, content TEXT)")
+    # Начальные данные
+    c.execute("INSERT INTO logs (id, content) VALUES ('LOG 01', 'Transmission: Signal detected at 0300 hours.') ON CONFLICT DO NOTHING")
+    c.execute("INSERT INTO logs (id, content) VALUES ('LOG 02', 'Anomaly reported in sector 7.') ON CONFLICT DO NOTHING")
+    c.execute("INSERT INTO logs (id, content) VALUES ('LOG 03', 'Last contact with unit RED-9B at 1800.') ON CONFLICT DO NOTHING")
     conn.commit()
     conn.close()
 
 def get_latest_log():
-    conn = sqlite3.connect("logs.db")
+    conn = psycopg2.connect(DATABASE_URL)
     c = conn.cursor()
-    c.execute("SELECT content FROM logs ORDER BY rowid DESC LIMIT 1")
+    c.execute("SELECT content FROM logs ORDER BY id DESC LIMIT 1")
     result = c.fetchone()
     conn.close()
     return result[0] if result else "Нет логов"
 
 def save_submission(chat_id, text):
-    conn = sqlite3.connect("logs.db")
+    conn = psycopg2.connect(DATABASE_URL)
     c = conn.cursor()
-    c.execute("INSERT INTO submissions (chat_id, content) VALUES (?, ?)", (str(chat_id), text))
+    c.execute("INSERT INTO submissions (chat_id, content) VALUES (%s, %s)", (str(chat_id), text))
     conn.commit()
     conn.close()
 
@@ -163,7 +172,13 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         vote = data.split("_")[1].capitalize()
         await query.message.reply_text(f"Голос учтён: {vote}")
     elif data in ["LOG 01", "LOG 02", "LOG 03"]:
-        await query.message.reply_text(f"{data}: Transmission test")
+        conn = psycopg2.connect(DATABASE_URL)
+        c = conn.cursor()
+        c.execute("SELECT content FROM logs WHERE id = %s", (data,))
+        result = c.fetchone()
+        conn.close()
+        content = result[0] if result else "Transmission test"
+        await query.message.reply_text(f"{data}: {content}")
 
 # Инициализация
 init_db()
@@ -184,6 +199,10 @@ app.add_handler(ConversationHandler(
 app.add_handler(CallbackQueryHandler(button_callback))
 
 # Webhook для Render
+@app_flask.route("/", methods=["GET"])
+def index():
+    return "Bot is running."
+
 @app_flask.route(f"/webhook/{BOT_TOKEN}", methods=["POST"])
 def webhook():
     update = Update.de_json(request.get_json(), app.bot)
@@ -198,9 +217,7 @@ async def init_telegram():
 
 # Запуск
 if __name__ == "__main__":
-    # Создаем цикл событий для асинхронной инициализации
     loop = asyncio.get_event_loop()
     loop.run_until_complete(init_telegram())
-    # Запускаем Flask через gunicorn (на Render через Procfile)
     app_flask.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
 
