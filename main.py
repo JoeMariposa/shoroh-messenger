@@ -9,7 +9,6 @@ from telegram.ext import (
     MessageHandler, filters, CallbackQueryHandler
 )
 
-# Логгирование
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
@@ -175,14 +174,6 @@ application.add_handler(ConversationHandler(
 ))
 application.add_handler(CallbackQueryHandler(handle_callback))
 
-# --- ИНИЦИАЛИЗАЦИЯ PTB ПЕРЕД ПЕРВЫМ ЗАПРОСОМ ---
-@app_flask.before_first_request
-def before_first_request():
-    logger.info("Initializing PTB Application...")
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(application.initialize())
-    logger.info("PTB Application initialized.")
-
 @app_flask.route("/", methods=["GET"])
 def index():
     logger.info("Received request to /")
@@ -210,4 +201,7 @@ def webhook():
 if __name__ == "__main__":
     init_db()
     logger.info("Starting bot with webhook")
+    # ---- ВАЖНО: ручная инициализация PTB Application ----
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(application.initialize())
     app_flask.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
