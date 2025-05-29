@@ -6,7 +6,7 @@ import asyncio
 from flask import Flask, request
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
-    Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
+    Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler, ConversationHandler
 )
 
 # --- Настройки ---
@@ -20,7 +20,6 @@ app_flask = Flask(__name__)
 
 # --- Telegram Application (PTB 20.x) ---
 application = Application.builder().token(TOKEN).concurrent_updates(True).build()
-application_initialized = False
 
 # --- Сообщения для вариативности ---
 REPLIES = {
@@ -130,9 +129,6 @@ async def pulse(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
     await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
 
-# Для /cast – диалог (ConversationHandler)
-from telegram.ext import ConversationHandler
-
 CAST_MESSAGE = range(1)
 
 async def cast_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -155,7 +151,6 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def unknown(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(random.choice(REPLIES['unknown']))
 
-# --- Inline-кнопки и callback ---
 async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -170,30 +165,14 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(f"Голос учтён: {route}")
 
 # --- Flask + PTB Integration ---
-@app_flask.before_first_request
-def before_first_request_func():
-    global application_initialized
-    if not application_initialized:
-        loop = asyncio.get_event_loop()
-        loop.run_until_complete(application.initialize())
-        application_initialized = True
-        logger.info("PTB Application initialized!")
-
 @app_flask.route("/", methods=["GET"])
 def index():
     return "Bot is running."
 
 @app_flask.route(f"/webhook/{TOKEN}", methods=["POST"])
 def webhook():
-    global application_initialized
-    if not application_initialized:
-        loop = asyncio.get_event_loop()
-        loop.run_until_complete(application.initialize())
-        application_initialized = True
-
     update = Update.de_json(request.get_json(force=True), application.bot)
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(application.process_update(update))
+    asyncio.run(application.process_update(update))
     return "ok"
 
 # --- Регистрация хендлеров PTB ---
@@ -223,4 +202,5 @@ if __name__ == "__main__":
     init_db()
     register_handlers()
     logger.info("Starting bot with webhook (Flask+PTB)")
+    asyncio.run(application.initialize())
     app_flask.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
