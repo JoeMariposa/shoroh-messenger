@@ -1,6 +1,7 @@
 import os
 import sqlite3
 import logging
+import random
 import asyncio
 from flask import Flask, request
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -9,6 +10,7 @@ from telegram.ext import (
     MessageHandler, filters, CallbackQueryHandler
 )
 
+# --- Логгирование ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
@@ -16,6 +18,66 @@ TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 if not TOKEN:
     logger.error("TELEGRAM_BOT_TOKEN is not set!")
     raise ValueError("TELEGRAM_BOT_TOKEN is not set!")
+
+# --- Варианты ответов ---
+START_VARIANTS = [
+    "Линия связи установлена. Терминал активен. Эфир шепчет.",
+    "Сигнал захвачен. Ты в системе. Не прерывай канал.",
+    "RX: соединение установлено. Логирование разрешено. Слушай внимательно.",
+]
+ECHO_VARIANTS = [
+    "Связь стабильна. Уровень шума: 2.1 дБ. Продолжай.",
+    "Ответ получен. Эхо отражено. Канал чист.",
+    "Пульсация зафиксирована. Отголосок принят.",
+    "Связь стабильна. Уровень шума: 2.3 дБ. Приём продолжается.",
+    "Ответ получен. Источник не идентифицирован.",
+    "Канал зафиксирован. Чужой отклик на частоте 147.9 МГц.",
+    "Шорох на линии. Ты уверен, что это был тест?",
+    "Проверка завершена. Но эхо продолжает звучать.",
+    "RX: возврат сигнала подтверждён. Исходная точка не совпадает.",
+]
+LOG_VARIANTS = [
+    "ЛОГ принят: {log}. Передача завершена.",
+    "Последняя активность зафиксирована. Содержимое: {log}.",
+    "Сигнал реконструирован. Транслирую последнюю запись…",
+]
+PULSE_VARIANTS = [
+    "Варианты маршрута загружены. Решай, пока эфир не сорвался.",
+    "Принять решение — уже движение. Выбери путь.",
+    "Сектор разветвлён. Укажи направление: [вперёд | остаться | вернуться].",
+]
+CODE_OK_VARIANTS = [
+    "Код принят. Активирован протокол ∆-209A. Ожидай отклика.",
+    "Доступ подтверждён. Расшифровка началась.",
+    "Сигнал принят. Ответ будет не для всех.",
+]
+CODE_FAIL_VARIANTS = [
+    "Ошибка. Код отрицается эфиром.",
+    "Неверная последовательность. Отказ доступа.",
+    "RX: ключ не принят. Сигнал отклонён.",
+]
+ARCHIVE_VARIANTS = [
+    "Открыт архив. Передачи отсортированы. Выбери.",
+    "Доступ к архиву разрешён. Некоторые записи шифруются до сих пор.",
+    "Архив логов активен. Перехваченные сигналы ждут расшифровки.",
+]
+CAST_VARIANTS = [
+    "Терминал готов. Передай, что ты слышал или видел.",
+    "Эфир открыт для твоего сигнала. Говори.",
+    "Начни передачу. Мы сохраним её.",
+]
+CAST_OK_VARIANTS = [
+    "Принято. Твоя запись вошла в эфир. Кто-то услышит.",
+    "Лог сохранён. Назначен код временной метки.",
+    "Передача завершена. Шорох сохранит.",
+]
+HELP_VARIANTS = [
+    "Команды терминала активны. Запросы слушаются.",
+    "Доступные сигналы: /log /cast /pulse /echo /code /archive /start /scan.",
+    "Это не просто команды. Это ключи. Используй их с умом.",
+]
+
+AWAITING_LOG = 0
 
 # --- DATABASE ---
 def init_db():
@@ -54,31 +116,18 @@ def save_submission(chat_id, text):
     conn.commit()
     conn.close()
 
-AWAITING_LOG = 0
-
 # --- HANDLERS ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    logger.info(f"Received /start command from chat {update.effective_chat.id}")
-    await update.message.reply_text(
-        "Соединение установлено. Вы подключены к приёмнику RED-9B.\n"
-        "Для помощи: /help"
-    )
+    await update.message.reply_text(random.choice(START_VARIANTS))
 
 async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    logger.info(f"Received /echo command from chat {update.effective_chat.id}")
-    import random
-    if random.random() < 0.8:
-        await update.message.reply_text("Связь стабильна. Помех: 1.3%. Переход возможен.")
-    else:
-        await update.message.reply_text("Пульсация нарушена. Предупреждение: активность слева.")
+    await update.message.reply_text(random.choice(ECHO_VARIANTS))
 
 async def log(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    logger.info(f"Received /log command from chat {update.effective_chat.id}")
     latest_log = get_latest_log()
-    await update.message.reply_text(f"Последняя передача: {latest_log}")
+    await update.message.reply_text(random.choice(LOG_VARIANTS).format(log=latest_log))
 
 async def pulse(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    logger.info(f"Received /pulse command from chat {update.effective_chat.id}")
     keyboard = [
         [
             InlineKeyboardButton("Вперед", callback_data="vote_forward"),
@@ -87,65 +136,44 @@ async def pulse(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text(
-        "Визуальный выбор: Куда пойдёт сталкер?",
-        reply_markup=reply_markup
-    )
+    await update.message.reply_text(random.choice(PULSE_VARIANTS), reply_markup=reply_markup)
 
 async def code(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    logger.info(f"Received /code command from chat {update.effective_chat.id}")
     code = " ".join(context.args) if context.args else ""
     if code == "D-209A":
-        await update.message.reply_text("Код принят. Спец-лог: Секретный сигнал RED-9B активирован.")
+        await update.message.reply_text(random.choice(CODE_OK_VARIANTS))
     else:
-        await update.message.reply_text("Сбой: Неверный код.")
+        await update.message.reply_text(random.choice(CODE_FAIL_VARIANTS))
 
 async def archive(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    logger.info(f"Received /archive command from chat {update.effective_chat.id}")
     logs = get_all_logs()
     keyboard = [[InlineKeyboardButton(log, callback_data=log)] for log in logs.keys()]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text("Доступные архивные логи:", reply_markup=reply_markup)
+    await update.message.reply_text(random.choice(ARCHIVE_VARIANTS), reply_markup=reply_markup)
 
 async def cast(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    logger.info(f"Received /cast command from chat {update.effective_chat.id}")
-    await update.message.reply_text("Хотите передать свою запись в эфир? Опишите, что вы видели или слышали.")
+    await update.message.reply_text(random.choice(CAST_VARIANTS))
     return AWAITING_LOG
 
 async def save_log(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    logger.info(f"Saving log from chat {update.effective_chat.id}")
     chat_id = update.effective_chat.id
     save_submission(chat_id, update.message.text)
-    await update.message.reply_text("Ваша запись сохранена в эфире.")
+    await update.message.reply_text(random.choice(CAST_OK_VARIANTS))
     return ConversationHandler.END
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    logger.info(f"Received /cancel command from chat {update.effective_chat.id}")
     await update.message.reply_text("Передача отменена.")
     return ConversationHandler.END
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    logger.info(f"Received /help command from chat {update.effective_chat.id}")
-    help_text = (
-        "/start — Подключиться к эфиру\n"
-        "/echo — Проверка сигнала\n"
-        "/log — Последняя передача\n"
-        "/pulse — Голосование за направление\n"
-        "/code <код> — Ввод скрытого сигнала\n"
-        "/archive — Доступ к архивным логам\n"
-        "/cast — Отправка собственного лога\n"
-        "/help — Справка по командам"
-    )
-    await update.message.reply_text(help_text)
+    await update.message.reply_text(random.choice(HELP_VARIANTS))
 
 async def unknown(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    logger.info(f"Received unknown command from chat {update.effective_chat.id}")
     await update.message.reply_text("Неизвестная команда. Используйте /help.")
 
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     data = query.data
-    logger.info(f"Received callback query: {data}")
     await query.answer()
     logs = get_all_logs()
     if data.startswith("vote_"):
@@ -156,10 +184,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # --- FLASK + PTB WEBHOOK ---
 app_flask = Flask(__name__)
-
-# ВНИМАНИЕ: Создаем и инициализируем PTB app и loop заранее!
-loop = asyncio.new_event_loop()
-asyncio.set_event_loop(loop)
 application = Application.builder().token(TOKEN).build()
 
 # Регистрация обработчиков
@@ -194,10 +218,7 @@ def webhook():
         update = Update.de_json(data, application.bot)
         if update:
             logger.info(f"Processing update: {update}")
-            # Сохраняем event loop и используем run_coroutine_threadsafe
-            future = asyncio.run_coroutine_threadsafe(
-                application.process_update(update), loop)
-            result = future.result()
+            asyncio.run(application.process_update(update))
         else:
             logger.info("No update found in request")
         return "ok"
@@ -208,5 +229,4 @@ def webhook():
 if __name__ == "__main__":
     init_db()
     logger.info("Starting bot with webhook")
-    loop.run_until_complete(application.initialize())
     app_flask.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
