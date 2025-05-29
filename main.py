@@ -156,6 +156,10 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # --- FLASK + PTB WEBHOOK ---
 app_flask = Flask(__name__)
+
+# ВНИМАНИЕ: Создаем и инициализируем PTB app и loop заранее!
+loop = asyncio.new_event_loop()
+asyncio.set_event_loop(loop)
 application = Application.builder().token(TOKEN).build()
 
 # Регистрация обработчиков
@@ -190,7 +194,10 @@ def webhook():
         update = Update.de_json(data, application.bot)
         if update:
             logger.info(f"Processing update: {update}")
-            asyncio.run(application.process_update(update))
+            # Сохраняем event loop и используем run_coroutine_threadsafe
+            future = asyncio.run_coroutine_threadsafe(
+                application.process_update(update), loop)
+            result = future.result()
         else:
             logger.info("No update found in request")
         return "ok"
@@ -201,7 +208,5 @@ def webhook():
 if __name__ == "__main__":
     init_db()
     logger.info("Starting bot with webhook")
-    # ---- ВАЖНО: ручная инициализация PTB Application ----
-    loop = asyncio.get_event_loop()
     loop.run_until_complete(application.initialize())
     app_flask.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
