@@ -10,7 +10,6 @@ from telegram.ext import (
     MessageHandler, filters, CallbackQueryHandler
 )
 
-# --- Логгирование ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
@@ -19,7 +18,7 @@ if not TOKEN:
     logger.error("TELEGRAM_BOT_TOKEN is not set!")
     raise ValueError("TELEGRAM_BOT_TOKEN is not set!")
 
-# --- Варианты ответов ---
+# ---- Вариативные фразы ----
 START_VARIANTS = [
     "Линия связи установлена. Терминал активен. Эфир шепчет.",
     "Сигнал захвачен. Ты в системе. Не прерывай канал.",
@@ -79,7 +78,6 @@ HELP_VARIANTS = [
 
 AWAITING_LOG = 0
 
-# --- DATABASE ---
 def init_db():
     logger.info("Initializing database")
     conn = sqlite3.connect("logs.db")
@@ -116,7 +114,7 @@ def save_submission(chat_id, text):
     conn.commit()
     conn.close()
 
-# --- HANDLERS ---
+# --- Хендлеры
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(random.choice(START_VARIANTS))
 
@@ -182,11 +180,10 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data in logs:
         await query.message.reply_text(f"{data}: {logs[data]}")
 
-# --- FLASK + PTB WEBHOOK ---
+# ---- FLASK + PTB Webhook ----
 app_flask = Flask(__name__)
 application = Application.builder().token(TOKEN).build()
 
-# Регистрация обработчиков
 application.add_handler(CommandHandler("start", start))
 application.add_handler(CommandHandler("echo", echo))
 application.add_handler(CommandHandler("log", log))
@@ -202,6 +199,13 @@ application.add_handler(ConversationHandler(
 ))
 application.add_handler(CallbackQueryHandler(handle_callback))
 
+# --- ИНИЦИАЛИЗАЦИЯ PTB ---
+loop = asyncio.get_event_loop()
+init_db()
+
+# Флаг для предотвращения повторной инициализации
+application_is_ready = False
+
 @app_flask.route("/", methods=["GET"])
 def index():
     logger.info("Received request to /")
@@ -209,6 +213,7 @@ def index():
 
 @app_flask.route(f"/webhook/{TOKEN}", methods=["POST"])
 def webhook():
+    global application_is_ready
     try:
         logger.info("Received webhook request")
         data = request.get_json(force=True)
@@ -218,7 +223,10 @@ def webhook():
         update = Update.de_json(data, application.bot)
         if update:
             logger.info(f"Processing update: {update}")
-            asyncio.run(application.process_update(update))
+            if not application_is_ready:
+                loop.run_until_complete(application.initialize())
+                application_is_ready = True
+            loop.run_until_complete(application.process_update(update))
         else:
             logger.info("No update found in request")
         return "ok"
@@ -227,6 +235,5 @@ def webhook():
         return "ok", 500
 
 if __name__ == "__main__":
-    init_db()
     logger.info("Starting bot with webhook")
     app_flask.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
