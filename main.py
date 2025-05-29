@@ -5,12 +5,13 @@ import asyncio
 
 from flask import Flask, request
 from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
+from telegram.ext import Application, CommandHandler, ContextTypes
 
 TOKEN = "ВАШ_ТОКЕН"  # Замените на токен вашего бота
 WEBHOOK_PATH = f"/webhook/{TOKEN}"
 DB_PATH = "shoroh.sqlite"
 
+# Вариативные ответы по командам
 REPLIES = {
     "start": [
         "Линия связи установлена. Терминал активен. Эфир шепчет.",
@@ -78,9 +79,13 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s', level=logging.INFO
 )
 
+# Flask
 app_flask = Flask(__name__)
+
+# Telegram Application (python-telegram-bot 20.x)
 application = Application.builder().token(TOKEN).build()
 
+# --------- SQLITE INIT ---------
 def init_db():
     with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
@@ -153,7 +158,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await unknown(update, context)
 
-# --------- HANDLERS ---------
+# --------- HANDLERS REGISTRATION ---------
 application.add_handler(CommandHandler("start", start))
 application.add_handler(CommandHandler("echo", echo))
 application.add_handler(CommandHandler("log", log))
@@ -162,12 +167,15 @@ application.add_handler(CommandHandler("code", code))
 application.add_handler(CommandHandler("archive", archive))
 application.add_handler(CommandHandler("cast", cast))
 application.add_handler(CommandHandler("help", help_command))
-application.add_handler(CommandHandler("scan", help_command))  # Если нужно
-# application.add_handler(CommandHandler("unknown", unknown)) # Не нужен, unknown ловится фильтром
+application.add_handler(CommandHandler("scan", help_command))  # При необходимости
+application.add_handler(CommandHandler("unknown", unknown))
+application.add_handler(CommandHandler(None, unknown))  # Неизвестная команда
+application.add_handler(CommandHandler("код", code))  # Для русскоязычных команд
 
-# Неизвестная команда:
-application.add_handler(MessageHandler(filters.COMMAND, unknown))
-# Текстовое сообщение:
+application.add_handler(CommandHandler("unknown", unknown))
+application.add_handler(CommandHandler(None, unknown))
+
+from telegram.ext import MessageHandler, filters
 application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
 # --------- FLASK WEBHOOK ---------
@@ -185,9 +193,11 @@ def webhook():
         asyncio.run(application.process_update(update))
     return "ok"
 
+# --------- MAIN ---------
 if __name__ == "__main__":
     logging.info("Initializing database")
     init_db()
     logging.info("Database initialized")
     logging.info("Starting bot with webhook")
+    # Не запускайте polling!
     app_flask.run(host="0.0.0.0", port=10000)
