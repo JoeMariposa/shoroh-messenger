@@ -4,7 +4,10 @@ import logging
 import asyncio
 from flask import Flask, request
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, ContextTypes, ConversationHandler, MessageHandler, filters, CallbackQueryHandler
+from telegram.ext import (
+    Application, CommandHandler, ContextTypes, ConversationHandler,
+    MessageHandler, filters, CallbackQueryHandler
+)
 
 # Логгирование
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -156,7 +159,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 app_flask = Flask(__name__)
 application = Application.builder().token(TOKEN).build()
 
-# Регистрация всех хендлеров
+# Регистрация обработчиков
 application.add_handler(CommandHandler("start", start))
 application.add_handler(CommandHandler("echo", echo))
 application.add_handler(CommandHandler("log", log))
@@ -171,6 +174,14 @@ application.add_handler(ConversationHandler(
     fallbacks=[CommandHandler("cancel", cancel)]
 ))
 application.add_handler(CallbackQueryHandler(handle_callback))
+
+# --- ИНИЦИАЛИЗАЦИЯ PTB ПЕРЕД ПЕРВЫМ ЗАПРОСОМ ---
+@app_flask.before_first_request
+def before_first_request():
+    logger.info("Initializing PTB Application...")
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(application.initialize())
+    logger.info("PTB Application initialized.")
 
 @app_flask.route("/", methods=["GET"])
 def index():
