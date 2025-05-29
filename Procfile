@@ -1,1 +1,1 @@
-web: gunicorn --worker-class uvicorn.workers.UvicornWorker main:app_flask
+web: gunicorn main:app_flask
