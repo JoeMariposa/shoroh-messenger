@@ -1,22 +1,33 @@
-import logging
+import os
 import random
 import sqlite3
+import logging
 import asyncio
-
 from flask import Flask, request
-from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import (
+    Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
+)
 
-TOKEN = "ВАШ_ТОКЕН"  # Замените на токен вашего бота
-WEBHOOK_PATH = f"/webhook/{TOKEN}"
-DB_PATH = "shoroh.sqlite"
+# --- Настройки ---
+TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN', 'YOUR_BOT_TOKEN')  # Указать токен через переменную среды!
+DB_NAME = 'logs.db'
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-# Вариативные ответы по командам
+# --- Инициализация Flask ---
+app_flask = Flask(__name__)
+
+# --- Telegram Application (PTB 20.x) ---
+application = Application.builder().token(TOKEN).concurrent_updates(True).build()
+application_initialized = False
+
+# --- Сообщения для вариативности ---
 REPLIES = {
     "start": [
         "Линия связи установлена. Терминал активен. Эфир шепчет.",
         "Сигнал захвачен. Ты в системе. Не прерывай канал.",
-        "RX: соединение установлено. Логирование разрешено. Слушай внимательно.",
+        "RX: соединение установлено. Логирование разрешено. Слушай внимательно."
     ],
     "echo": [
         "Связь стабильна. Уровень шума: 2.1 дБ. Продолжай.",
@@ -27,177 +38,189 @@ REPLIES = {
         "Канал зафиксирован. Чужой отклик на частоте 147.9 МГц.",
         "Шорох на линии. Ты уверен, что это был тест?",
         "Проверка завершена. Но эхо продолжает звучать.",
-        "RX: возврат сигнала подтверждён. Исходная точка не совпадает.",
+        "RX: возврат сигнала подтверждён. Исходная точка не совпадает."
     ],
     "log": [
         "ЛОГ принят: {log}. Передача завершена.",
         "Последняя активность зафиксирована. Содержимое: {log}.",
-        "Сигнал реконструирован. Транслирую последнюю запись…",
+        "Сигнал реконструирован. Транслирую последнюю запись…\n{log}"
     ],
     "pulse": [
         "Варианты маршрута загружены. Решай, пока эфир не сорвался.",
         "Принять решение — уже движение. Выбери путь.",
-        "Сектор разветвлён. Укажи направление: [вперёд | остаться | вернуться].",
-    ],
-    "code_ok": [
-        "Код принят. Активирован протокол ∆-209A. Ожидай отклика.",
-        "Доступ подтверждён. Расшифровка началась.",
-        "Сигнал принят. Ответ будет не для всех.",
-    ],
-    "code_fail": [
-        "Ошибка. Код отрицается эфиром.",
-        "Неверная последовательность. Отказ доступа.",
-        "RX: ключ не принят. Сигнал отклонён.",
+        "Сектор разветвлён. Укажи направление: [вперёд | остаться | вернуться]."
     ],
     "archive": [
         "Открыт архив. Передачи отсортированы. Выбери.",
         "Доступ к архиву разрешён. Некоторые записи шифруются до сих пор.",
-        "Архив логов активен. Перехваченные сигналы ждут расшифровки.",
+        "Архив логов активен. Перехваченные сигналы ждут расшифровки."
     ],
-    "cast_ready": [
+    "cast_init": [
         "Терминал готов. Передай, что ты слышал или видел.",
         "Эфир открыт для твоего сигнала. Говори.",
-        "Начни передачу. Мы сохраним её.",
+        "Начни передачу. Мы сохраним её."
     ],
     "cast_done": [
         "Принято. Твоя запись вошла в эфир. Кто-то услышит.",
         "Лог сохранён. Назначен код временной метки.",
-        "Передача завершена. Шорох сохранит.",
+        "Передача завершена. Шорох сохранит."
     ],
     "help": [
-        "Команды терминала активны. Запросы слушаются.",
+        "Команды терминала активны. Запросы слушаются.\n\n"
         "Доступные сигналы: /log /cast /pulse /echo /code /archive /start /scan.",
-        "Это не просто команды. Это ключи. Используй их с умом.",
+        "Это не просто команды. Это ключи. Используй их с умом."
     ],
     "unknown": [
         "Неизвестная команда. Используйте /help."
     ]
 }
 
-# --------- ИНИЦИАЛИЗАЦИЯ ---------
-logging.basicConfig(
-    format='%(asctime)s - %(levelname)s - %(message)s', level=logging.INFO
-)
-
-# Flask
-app_flask = Flask(__name__)
-
-# Telegram Application (python-telegram-bot 20.x)
-application = Application.builder().token(TOKEN).build()
-
-# --------- SQLITE INIT ---------
+# --- Простая SQLite логика (если нужна для хранения логов) ---
 def init_db():
-    with sqlite3.connect(DB_PATH) as conn:
-        c = conn.cursor()
-        c.execute('''
-            CREATE TABLE IF NOT EXISTS logs (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER,
-                log TEXT,
-                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
-        conn.commit()
+    with sqlite3.connect(DB_NAME) as conn:
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS logs (id INTEGER PRIMARY KEY AUTOINCREMENT, content TEXT, ts TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
+        )
 
-init_db()
+def save_log(content):
+    with sqlite3.connect(DB_NAME) as conn:
+        conn.execute("INSERT INTO logs (content) VALUES (?)", (content,))
 
-# --------- КОМАНДЫ ---------
+def get_latest_log():
+    with sqlite3.connect(DB_NAME) as conn:
+        row = conn.execute("SELECT content FROM logs ORDER BY id DESC LIMIT 1").fetchone()
+        return row[0] if row else "Нет логов."
+
+def get_all_logs():
+    with sqlite3.connect(DB_NAME) as conn:
+        rows = conn.execute("SELECT id, content FROM logs ORDER BY id DESC LIMIT 10").fetchall()
+        return [f"LOG {id:02d}: {content}" for id, content in rows]
+
+# --- Хендлеры команд ---
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(random.choice(REPLIES["start"]))
+    await update.message.reply_text(random.choice(REPLIES['start']))
 
 async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(random.choice(REPLIES["echo"]))
+    await update.message.reply_text(random.choice(REPLIES['echo']))
 
 async def log(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    with sqlite3.connect(DB_PATH) as conn:
-        c = conn.cursor()
-        c.execute("SELECT log FROM logs ORDER BY timestamp DESC LIMIT 1")
-        result = c.fetchone()
-        log_txt = result[0] if result else "нет новых логов."
-    text = random.choice(REPLIES["log"]).format(log=log_txt)
+    log = get_latest_log()
+    text = random.choice(REPLIES['log']).format(log=log)
     await update.message.reply_text(text)
-
-async def pulse(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(random.choice(REPLIES["pulse"]))
-
-async def code(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if len(context.args) == 0:
-        await update.message.reply_text("Укажите код после /code.")
-        return
-    user_code = context.args[0].strip().lower()
-    secret_codes = {"delta209a", "209a", "secretkey"}
-    if user_code in secret_codes:
-        await update.message.reply_text(random.choice(REPLIES["code_ok"]))
-    else:
-        await update.message.reply_text(random.choice(REPLIES["code_fail"]))
 
 async def archive(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(random.choice(REPLIES["archive"]))
+    await update.message.reply_text(random.choice(REPLIES['archive']))
+    logs = get_all_logs()
+    keyboard = [
+        [InlineKeyboardButton(log, callback_data=f"log_{i+1}")]
+        for i, log in enumerate(logs)
+    ]
+    if keyboard:
+        await update.message.reply_text("Выберите лог:", reply_markup=InlineKeyboardMarkup(keyboard))
 
-async def cast(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data['awaiting_log'] = True
-    await update.message.reply_text(random.choice(REPLIES["cast_ready"]))
+async def pulse(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = random.choice(REPLIES['pulse'])
+    keyboard = [
+        [
+            InlineKeyboardButton("Вперёд", callback_data="forward"),
+            InlineKeyboardButton("Остаться", callback_data="stay"),
+            InlineKeyboardButton("Вернуться", callback_data="back"),
+        ]
+    ]
+    await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
 
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = "\n".join(REPLIES["help"])
-    await update.message.reply_text(text)
+# Для /cast – диалог (ConversationHandler)
+from telegram.ext import ConversationHandler
+
+CAST_MESSAGE = range(1)
+
+async def cast_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(random.choice(REPLIES['cast_init']))
+    return CAST_MESSAGE
+
+async def cast_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    save_log(update.message.text)
+    await update.message.reply_text(random.choice(REPLIES['cast_done']))
+    return ConversationHandler.END
+
+async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Отмена передачи.")
+    return ConversationHandler.END
+
+async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    for text in REPLIES['help']:
+        await update.message.reply_text(text)
 
 async def unknown(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(REPLIES["unknown"][0])
+    await update.message.reply_text(random.choice(REPLIES['unknown']))
 
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if context.user_data.get('awaiting_log'):
-        log_txt = update.message.text
-        user_id = update.effective_user.id
-        with sqlite3.connect(DB_PATH) as conn:
-            c = conn.cursor()
-            c.execute("INSERT INTO logs (user_id, log) VALUES (?, ?)", (user_id, log_txt))
-            conn.commit()
-        context.user_data['awaiting_log'] = False
-        await update.message.reply_text(random.choice(REPLIES["cast_done"]))
-    else:
-        await unknown(update, context)
+# --- Inline-кнопки и callback ---
+async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    data = query.data
+    if data.startswith("log_"):
+        idx = int(data[4:]) - 1
+        logs = get_all_logs()
+        if 0 <= idx < len(logs):
+            await query.edit_message_text(logs[idx])
+    elif data in ["forward", "stay", "back"]:
+        route = {"forward": "Вперёд", "stay": "Остаться", "back": "Вернуться"}[data]
+        await query.edit_message_text(f"Голос учтён: {route}")
 
-# --------- HANDLERS REGISTRATION ---------
-application.add_handler(CommandHandler("start", start))
-application.add_handler(CommandHandler("echo", echo))
-application.add_handler(CommandHandler("log", log))
-application.add_handler(CommandHandler("pulse", pulse))
-application.add_handler(CommandHandler("code", code))
-application.add_handler(CommandHandler("archive", archive))
-application.add_handler(CommandHandler("cast", cast))
-application.add_handler(CommandHandler("help", help_command))
-application.add_handler(CommandHandler("scan", help_command))  # При необходимости
-application.add_handler(CommandHandler("unknown", unknown))
-application.add_handler(CommandHandler(None, unknown))  # Неизвестная команда
-application.add_handler(CommandHandler("код", code))  # Для русскоязычных команд
+# --- Flask + PTB Integration ---
+@app_flask.before_first_request
+def before_first_request_func():
+    global application_initialized
+    if not application_initialized:
+        loop = asyncio.get_event_loop()
+        loop.run_until_complete(application.initialize())
+        application_initialized = True
+        logger.info("PTB Application initialized!")
 
-application.add_handler(CommandHandler("unknown", unknown))
-application.add_handler(CommandHandler(None, unknown))
-
-from telegram.ext import MessageHandler, filters
-application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-
-# --------- FLASK WEBHOOK ---------
 @app_flask.route("/", methods=["GET"])
 def index():
-    return "OK"
+    return "Bot is running."
 
-@app_flask.route(WEBHOOK_PATH, methods=["POST"])
+@app_flask.route(f"/webhook/{TOKEN}", methods=["POST"])
 def webhook():
+    global application_initialized
+    if not application_initialized:
+        loop = asyncio.get_event_loop()
+        loop.run_until_complete(application.initialize())
+        application_initialized = True
+
     update = Update.de_json(request.get_json(force=True), application.bot)
-    try:
-        loop = asyncio.get_running_loop()
-        task = loop.create_task(application.process_update(update))
-    except RuntimeError:
-        asyncio.run(application.process_update(update))
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(application.process_update(update))
     return "ok"
 
-# --------- MAIN ---------
+# --- Регистрация хендлеров PTB ---
+def register_handlers():
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("echo", echo))
+    application.add_handler(CommandHandler("log", log))
+    application.add_handler(CommandHandler("archive", archive))
+    application.add_handler(CommandHandler("pulse", pulse))
+    application.add_handler(CommandHandler("help", help_cmd))
+    application.add_handler(CallbackQueryHandler(button))
+
+    conv_handler = ConversationHandler(
+        entry_points=[CommandHandler('cast', cast_start)],
+        states={
+            CAST_MESSAGE: [MessageHandler(filters.TEXT & ~filters.COMMAND, cast_message)],
+        },
+        fallbacks=[CommandHandler('cancel', cancel)],
+        allow_reentry=True
+    )
+    application.add_handler(conv_handler)
+
+    application.add_handler(MessageHandler(filters.COMMAND, unknown))
+
+# --- Точка входа ---
 if __name__ == "__main__":
-    logging.info("Initializing database")
     init_db()
-    logging.info("Database initialized")
-    logging.info("Starting bot with webhook")
-    # Не запускайте polling!
-    app_flask.run(host="0.0.0.0", port=10000)
+    register_handlers()
+    logger.info("Starting bot with webhook (Flask+PTB)")
+    app_flask.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
