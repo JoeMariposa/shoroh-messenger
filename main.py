@@ -1,6 +1,7 @@
 import logging
 import random
 import os
+import asyncio
 from flask import Flask, request
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, ConversationHandler, MessageHandler, filters, CallbackQueryHandler
@@ -184,15 +185,22 @@ app.add_handler(CallbackQueryHandler(button_callback))
 
 # Webhook для Render
 @app_flask.route(f"/webhook/{BOT_TOKEN}", methods=["POST"])
-async def webhook():
+def webhook():
     update = Update.de_json(request.get_json(), app.bot)
-    await app.process_update(update)
+    asyncio.run_coroutine_threadsafe(app.process_update(update), loop=asyncio.get_event_loop())
     return "ok"
 
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app_flask, host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+# Инициализация Telegram приложения
+async def init_telegram():
+    await app.initialize()
+    await app.start()
+    await app.bot.set_webhook(url=f"https://shoroh-messenger.onrender.com/webhook/{BOT_TOKEN}")
 
+# Запуск
 if __name__ == "__main__":
-    main()
+    # Создаем цикл событий для асинхронной инициализации
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(init_telegram())
+    # Запускаем Flask через gunicorn (на Render через Procfile)
+    app_flask.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
 
