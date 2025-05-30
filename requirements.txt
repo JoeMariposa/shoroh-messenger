@@ -2,4 +2,4 @@ flask[async]==2.3.3
 gunicorn==23.0.0
 python-telegram-bot==20.6
 requests==2.31.0
-httpx==0.25.2
+httpx==0.25.2 
