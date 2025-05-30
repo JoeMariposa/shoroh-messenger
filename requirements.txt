@@ -1,5 +1,6 @@
-python-telegram-bot==20.6
 flask[async]
 gunicorn
+uvicorn
+python-telegram-bot>=20.0
 httpx
-asgiref
+requests
