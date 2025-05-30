@@ -1,25 +1,19 @@
 import os
-import logging
 import random
-from flask import Flask, request, Response
+from flask import Flask, request
 from telegram import Update
 from telegram.ext import (
-    Application, CommandHandler, MessageHandler, ContextTypes, filters,
+    Application, CommandHandler, ContextTypes
 )
-import asyncio
 
-TOKEN = os.environ.get("BOT_TOKEN")
-WEBHOOK_HOST = os.environ.get("WEBHOOK_HOST")
+TOKEN = os.getenv('BOT_TOKEN', 'ваш_токен_сюда')  # Лучше использовать переменную окружения!
 WEBHOOK_PATH = f"/webhook/{TOKEN}"
-WEBHOOK_URL = f"{WEBHOOK_HOST}{WEBHOOK_PATH}"
-PORT = int(os.environ.get("PORT", 10000))
+WEBHOOK_URL = f"https://shoroh-messenger.onrender.com{WEBHOOK_PATH}"
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 app = Flask(__name__)
 
-# --- Вариативные ответы ---
-VARIANTS = {
+# Варианты для команд
+replies = {
     "start": [
         "Линия связи установлена. Терминал активен. Эфир шепчет.",
         "Сигнал захвачен. Ты в системе. Не прерывай канал.",
@@ -61,12 +55,12 @@ VARIANTS = {
         "Доступ к архиву разрешён. Некоторые записи шифруются до сих пор.",
         "Архив логов активен. Перехваченные сигналы ждут расшифровки."
     ],
-    "cast": [
+    "cast_start": [
         "Терминал готов. Передай, что ты слышал или видел.",
         "Эфир открыт для твоего сигнала. Говори.",
         "Начни передачу. Мы сохраним её."
     ],
-    "cast_after": [
+    "cast_done": [
         "Принято. Твоя запись вошла в эфир. Кто-то услышит.",
         "Лог сохранён. Назначен код временной метки.",
         "Передача завершена. Шорох сохранит."
@@ -78,62 +72,54 @@ VARIANTS = {
     ]
 }
 
-def variant(cmd, *args):
-    msg = random.choice(VARIANTS.get(cmd, ["..."]))
-    return msg.format(*args)
+# Для проверки кода — замените на свой реальный!
+VALID_CODES = {"delta209a", "209a", "shoroh"}
 
-# --- Telegram Handlers ---
+def get_reply(key):
+    return random.choice(replies[key])
 
+# Обработчики команд
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(variant("start"))
+    await update.message.reply_text(get_reply("start"))
 
 async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(variant("echo"))
+    await update.message.reply_text(get_reply("echo"))
 
 async def log(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Обычно логи берутся из канала, здесь — просто вариативный ответ.
-    text = variant("log").replace("{лог}", "Данных нет")
-    await update.message.reply_text(text)
+    # Здесь можно интегрировать реальный лог, пока выводим случайный вариант
+    answer = get_reply("log").replace("{лог}", "— лог не найден —")
+    await update.message.reply_text(answer)
 
 async def pulse(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(variant("pulse"))
+    await update.message.reply_text(get_reply("pulse"))
 
 async def code(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if context.args:
-        # Для примера код "209A" считаем валидным, остальные — невалидны
-        user_code = context.args[0]
-        if user_code.lower() in ['209a', '∆-209a', 'delta209a']:
-            await update.message.reply_text(variant("code_ok"))
-        else:
-            await update.message.reply_text(variant("code_fail"))
+    if context.args and context.args[0].lower() in VALID_CODES:
+        await update.message.reply_text(get_reply("code_ok"))
     else:
-        await update.message.reply_text("Введите код: /code <код>")
+        await update.message.reply_text(get_reply("code_fail"))
 
 async def archive(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(variant("archive"))
+    await update.message.reply_text(get_reply("archive"))
 
-# Для кастинга — сначала ждем сообщение, потом — отдаём другой вариант ответа
-CAST_STATE = {}
+# Для /cast — 2 этапа: начало и подтверждение
+user_casting = set()
 
 async def cast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    CAST_STATE[user_id] = True
-    await update.message.reply_text(variant("cast"))
-
-async def text_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    if CAST_STATE.get(user_id):
-        CAST_STATE[user_id] = False
-        await update.message.reply_text(variant("cast_after"))
+    if user_id in user_casting:
+        user_casting.remove(user_id)
+        await update.message.reply_text(get_reply("cast_done"))
     else:
-        await update.message.reply_text("Используйте команды или /help.")
+        user_casting.add(user_id)
+        await update.message.reply_text(get_reply("cast_start"))
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(variant("help"))
+    await update.message.reply_text(get_reply("help"))
 
-# --- Инициализация Telegram Application ---
-
+# Инициализация приложения и регистрация команд
 application = Application.builder().token(TOKEN).build()
+
 application.add_handler(CommandHandler("start", start))
 application.add_handler(CommandHandler("echo", echo))
 application.add_handler(CommandHandler("log", log))
@@ -142,31 +128,25 @@ application.add_handler(CommandHandler("code", code))
 application.add_handler(CommandHandler("archive", archive))
 application.add_handler(CommandHandler("cast", cast))
 application.add_handler(CommandHandler("help", help_command))
-application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_message))
 
-@app.route("/", methods=["GET", "HEAD"])
-def index():
-    return "OK", 200
-
+# Flask webhook
 @app.route(WEBHOOK_PATH, methods=["POST"])
-async def webhook():
-    if request.method == "POST":
-        update = Update.de_json(request.get_json(force=True), application.bot)
-        await application.process_update(update)
-        return Response("ok", status=200)
-    return Response("not allowed", status=405)
+def webhook():
+    update = Update.de_json(request.get_json(force=True), application.bot)
+    application.update_queue.put_nowait(update)
+    return "ok"
 
-async def setup_webhook():
-    await application.bot.delete_webhook()
-    await application.bot.set_webhook(WEBHOOK_URL)
-    info = await application.bot.get_webhook_info()
-    logger.info(f"Webhook set: {info}")
-
-def run():
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(application.initialize())
-    loop.run_until_complete(setup_webhook())
-    app.run(host="0.0.0.0", port=PORT)
+@app.route("/", methods=["GET"])
+def index():
+    return "Shoroh Messenger Bot is running!"
 
 if __name__ == "__main__":
-    run()
+    import asyncio
+    # Установка webhook
+    async def set_webhook():
+        await application.bot.delete_webhook()
+        await application.bot.set_webhook(WEBHOOK_URL)
+        print("Webhook set:", await application.bot.get_webhook_info())
+    asyncio.run(set_webhook())
+    # Запуск Flask
+    app.run(host="0.0.0.0", port=10000)
