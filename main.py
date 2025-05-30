@@ -4,14 +4,11 @@ from flask import Flask, request
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 
-# Ваш токен
 TELEGRAM_TOKEN = os.environ.get('TELEGRAM_TOKEN') or "7834724747:AAEEojrbLDsXht_mQu6oFbYK7OGTDcr5FpI"
 WEBHOOK_PATH = f"/webhook/{TELEGRAM_TOKEN}"
-WEBHOOK_URL = f"https://shoroh-messenger.onrender.com{WEBHOOK_PATH}"
 
 app = Flask(__name__)
 
-# Варианты ответов
 REPLIES = {
     "start": [
         "Линия связи установлена. Терминал активен. Эфир шепчет.",
@@ -71,52 +68,37 @@ REPLIES = {
     ],
 }
 
-
 def variant(cmd, ok=True):
     if cmd == "code":
         return random.choice(REPLIES["code_ok"] if ok else REPLIES["code_fail"])
     return random.choice(REPLIES[cmd])
 
-
-# Основное приложение Telegram
 application = Application.builder().token(TELEGRAM_TOKEN).build()
 
-
-# Обработчики команд
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(variant("start"))
-
 
 async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(variant("echo"))
 
-
 async def log(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(variant("log"))
-
 
 async def pulse(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(variant("pulse"))
 
-
 async def code(update: Update, context: ContextTypes.DEFAULT_TYPE):
     code_entered = " ".join(context.args)
-    # Здесь ваш код-пароль, если хотите проверку (например, 12345)
     SECRET_CODE = "12345"
     if code_entered == SECRET_CODE:
         await update.message.reply_text(variant("code", ok=True))
     else:
         await update.message.reply_text(variant("code", ok=False))
 
-
 async def archive(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(variant("archive"))
 
-
-# Для /cast — двухступенчатая (сначала предложение, потом результат)
 cast_waiting = set()
-
-
 async def cast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     if user_id not in cast_waiting:
@@ -126,12 +108,9 @@ async def cast(update: Update, context: ContextTypes.DEFAULT_TYPE):
         cast_waiting.remove(user_id)
         await update.message.reply_text(variant("cast_done"))
 
-
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(variant("help"))
 
-
-# Регистрация обработчиков
 application.add_handler(CommandHandler("start", start))
 application.add_handler(CommandHandler("echo", echo))
 application.add_handler(CommandHandler("log", log))
@@ -141,30 +120,14 @@ application.add_handler(CommandHandler("archive", archive))
 application.add_handler(CommandHandler("cast", cast))
 application.add_handler(CommandHandler("help", help_command))
 
-
-# Webhook endpoint (async Flask)
 @app.route(WEBHOOK_PATH, methods=["POST"])
 async def webhook():
     update = Update.de_json(request.get_json(force=True), application.bot)
     await application.process_update(update)
     return "ok"
 
-
 @app.route("/", methods=["GET"])
 def index():
     return "Shoroh Messenger bot is running."
 
-
-if __name__ == "__main__":
-    import asyncio
-
-    async def main():
-        # Установим webhook при старте (можно убрать если делаете это вручную)
-        await application.bot.delete_webhook(drop_pending_updates=True)
-        await application.bot.set_webhook(url=WEBHOOK_URL, allowed_updates=["message", "callback_query"])
-        print("Webhook set:", await application.bot.get_webhook_info())
-        await application.start()
-        await application.updater.start_polling()
-        await application.idle()
-
-    asyncio.run(main())
+# Запускать gunicorn так: gunicorn -k uvicorn.workers.UvicornWorker main:app
