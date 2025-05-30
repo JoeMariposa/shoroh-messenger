@@ -197,3 +197,4 @@ if __name__ == "__main__":
     # Для асинхронного запуска main() до запуска Flask
     asyncio.run(main())
     app.run(host="0.0.0.0", port=10000)
+    
