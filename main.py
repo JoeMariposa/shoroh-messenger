@@ -1,11 +1,11 @@
 import os
 import random
-import asyncio
 from flask import Flask, request
 from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application, CommandHandler, MessageHandler, ContextTypes, filters, CallbackQueryHandler
 )
+import asyncio
 
 # --- Атмосферные варианты команд ---
 ECHO_ALIASES = {"echo", "проверка", "test", "эхо", "check"}
@@ -109,14 +109,14 @@ async def code(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "Команды терминала:\n"
-        "📡 /start - start, контакт, старт - подключиться к эфиру\n"
+        "📡 /start - start,	контакт	старт - подключиться к эфиру\n"
         "🔊 /echo - проверка, test, эхо, check - проверить сигнал\n"
-        "🗒 /log - log, лог, трафик — последняя передача\n"
-        "🔻 /pulse — pulse, маршрут, выбор - выбрать маршрут\n"
-        "🔑 /code <код> — code, код, ключ - ввести скрытый сигнал\n"
-        "🗄 /archive — archive, архив, старое - архив логов\n"
-        "✉️ /cast  - cast, передать, сигнал — отправить запись\n"
-        "🆘 /help — help, помощь, справка - справочная терминала RX:SHOROH\n"
+        "🗒 /log - log,	лог, трафик — последняя передача\n"
+        "🔻 /pulse — pulse,	маршрут, выбор - выбрать маршрут\n"
+        "🔑 /code <код> — code,	код, ключ - ввести скрытый сигнал\n"
+        "🗄 /archive — archive,	архив,	старое - архив логов\n"
+        "✉️ /cast 	-	cast,	передать,	сигнал — отправить запись\n"
+        "🆘 /help — help,	помощь,	справка - справочная терминала RX:SHOROH\n"
         "— Используй атмосферные слова, терминал поймёт…"
     )
 
@@ -289,8 +289,6 @@ WEBHOOK_URL = f"{WEBHOOK_HOST}{WEBHOOK_PATH}"
 
 app = Flask(__name__)
 
-# Глобальный event loop для всей работы с Telegram-ботом!
-loop = asyncio.get_event_loop()
 application = Application.builder().token(TOKEN).build()
 setup_handlers(application)
 
@@ -301,13 +299,16 @@ def home():
 @app.route(WEBHOOK_PATH, methods=["POST"])
 def webhook():
     update = Update.de_json(request.get_json(force=True), application.bot)
-    # Все async вызовы — через существующий event loop!
-    asyncio.run_coroutine_threadsafe(application.initialize(), loop).result()
-    asyncio.run_coroutine_threadsafe(application.process_update(update), loop).result()
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.run_until_complete(application.initialize())
+    loop.run_until_complete(application.process_update(update))
+    loop.close()
     return "OK"
 
 def main():
-    # Ставим webhook только при cold start, один раз
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
     loop.run_until_complete(application.bot.delete_webhook())
     loop.run_until_complete(application.bot.set_webhook(WEBHOOK_URL))
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
