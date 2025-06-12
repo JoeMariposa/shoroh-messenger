@@ -18,7 +18,7 @@ HELP_ALIASES = {"help", "помощь", "справка"}
 SCAN_ALIASES = {"scan", "скан", "искать"}
 
 # --- Админ и история логов ---
-ADMIN_IDS = {642787882}  # <-- замените на свой id (int)
+ADMIN_IDS = {642787882}  # <-- замените на свой id
 LOG_HISTORY = []
 ARCHIVE_PAGE_SIZE = 5  # сколько логов на страницу
 
@@ -275,7 +275,7 @@ WEBHOOK_URL = f"{WEBHOOK_HOST}{WEBHOOK_PATH}"
 
 app = Flask(__name__)
 
-# --- Главная интеграция с правильной работой event loop ---
+# --- Глобальное приложение Telegram (инициализируется один раз) ---
 application = Application.builder().token(TOKEN).build()
 setup_handlers(application)
 
@@ -283,15 +283,20 @@ setup_handlers(application)
 def home():
     return "OK"
 
-import asyncio
-
 @app.route(WEBHOOK_PATH, methods=["POST"])
 def webhook():
     update = Update.de_json(request.get_json(force=True), application.bot)
-    asyncio.run(application.process_update(update))
+    import asyncio
+    async def process():
+        if not application._initialized:
+            await application.initialize()
+        await application.process_update(update)
+    asyncio.run(process())
     return "OK"
 
 def main():
+    import asyncio
+    # Устанавливаем webhook при запуске
     loop = asyncio.get_event_loop()
     loop.run_until_complete(application.bot.delete_webhook())
     loop.run_until_complete(application.bot.set_webhook(WEBHOOK_URL))
