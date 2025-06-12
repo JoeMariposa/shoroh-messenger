@@ -5,6 +5,7 @@ from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKe
 from telegram.ext import (
     Application, CommandHandler, MessageHandler, ContextTypes, filters, CallbackQueryHandler
 )
+import asyncio
 
 # --- Атмосферные варианты команд ---
 ECHO_ALIASES = {"echo", "проверка", "test", "эхо", "check"}
@@ -268,6 +269,7 @@ def setup_handlers(application):
     application.add_handler(CallbackQueryHandler(pulse_button, pattern="^pulse_"))
     application.add_handler(CallbackQueryHandler(archive_button, pattern="^archive_"))
 
+# --- Flask и Telegram Application интеграция ---
 TOKEN = os.environ["BOT_TOKEN"]
 WEBHOOK_HOST = os.environ.get("WEBHOOK_HOST")
 WEBHOOK_PATH = f"/webhook/{TOKEN}"
@@ -276,8 +278,16 @@ WEBHOOK_URL = f"{WEBHOOK_HOST}{WEBHOOK_PATH}"
 app = Flask(__name__)
 
 # --- Глобальное приложение Telegram (инициализируется один раз) ---
+try:
+    loop = asyncio.get_event_loop()
+except RuntimeError:
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
 application = Application.builder().token(TOKEN).build()
 setup_handlers(application)
+loop.run_until_complete(application.initialize())
+loop.run_until_complete(application.bot.delete_webhook())
+loop.run_until_complete(application.bot.set_webhook(WEBHOOK_URL))
 
 @app.route("/", methods=["GET"])
 def home():
@@ -286,20 +296,11 @@ def home():
 @app.route(WEBHOOK_PATH, methods=["POST"])
 def webhook():
     update = Update.de_json(request.get_json(force=True), application.bot)
-    import asyncio
-    async def process():
-        if not application._initialized:
-            await application.initialize()
-        await application.process_update(update)
-    asyncio.run(process())
+    loop = asyncio.get_event_loop()
+    loop.create_task(application.process_update(update))
     return "OK"
 
 def main():
-    import asyncio
-    # Устанавливаем webhook при запуске
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(application.bot.delete_webhook())
-    loop.run_until_complete(application.bot.set_webhook(WEBHOOK_URL))
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
 
 if __name__ == "__main__":
