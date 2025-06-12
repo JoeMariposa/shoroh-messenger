@@ -109,14 +109,14 @@ async def code(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "Команды терминала:\n"
-        "📡 /start — подключиться к эфиру\n"
-        "🔊 /echo — проверить сигнал\n"
-        "🗒 /log — последняя передача\n"
-        "🔻 /pulse — выбрать маршрут\n"
-        "🔑 /code <код> — ввести скрытый сигнал\n"
-        "🗄 /archive — архив логов\n"
-        "✉️ /cast — отправить запись\n"
-        "🆘 /help — справка\n"
+        "📡 /start - start,	контакт	старт - подключиться к эфиру\n"
+        "🔊 /echo - проверка, test, эхо, check - проверить сигнал\n"
+        "🗒 /log - log,	лог, трафик— последняя передача\n"
+        "🔻 /pulse — pulse,	маршрут, выбор -	выбрать маршрут\n"
+        "🔑 /code <код> — code,	код, ключ - ввести скрытый сигнал\n"
+        "🗄 /archive — archive,	архив,	старое - архив логов\n"
+        "✉️ /cast 	-	cast,	передать,	сигнал — отправить запись\n"
+        "🆘 /help — help,	помощь,	справка - справочная терминала RX:SHOROH\n"
         "— Используй атмосферные слова, терминал поймёт…"
     )
 
