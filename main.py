@@ -292,6 +292,9 @@ app = Flask(__name__)
 application = Application.builder().token(TOKEN).build()
 setup_handlers(application)
 
+# --- создаём глобальный event loop один раз ---
+loop = asyncio.get_event_loop()
+
 @app.route("/", methods=["GET"])
 def home():
     return "OK"
@@ -299,16 +302,16 @@ def home():
 @app.route(WEBHOOK_PATH, methods=["POST"])
 def webhook():
     update = Update.de_json(request.get_json(force=True), application.bot)
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    loop.run_until_complete(application.initialize())
-    loop.run_until_complete(application.process_update(update))
-    loop.close()
+    # не создаём и не закрываем новый loop!
+    asyncio.run_coroutine_threadsafe(process_update_async(update), loop)
     return "OK"
 
+async def process_update_async(update):
+    if not application._initialized:
+        await application.initialize()
+    await application.process_update(update)
+
 def main():
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
     loop.run_until_complete(application.bot.delete_webhook())
     loop.run_until_complete(application.bot.set_webhook(WEBHOOK_URL))
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
