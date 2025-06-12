@@ -7,6 +7,7 @@ from telegram.ext import (
 )
 import asyncio
 
+# --- Атмосферные варианты команд ---
 ECHO_ALIASES = {"echo", "проверка", "test", "эхо", "check"}
 START_ALIASES = {"start", "контакт", "старт"}
 LOG_ALIASES = {"log", "лог", "трафик"}
@@ -90,6 +91,36 @@ def pick(key, extra=None):
         resp = resp.replace("{лог}", extra)
     return resp
 
+# Команды с /
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    reply_markup = ReplyKeyboardMarkup(START_REPLY_OPTIONS, resize_keyboard=True)
+    await update.message.reply_text(pick("start"), reply_markup=reply_markup)
+
+async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(pick("echo"))
+
+async def code(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    parts = update.message.text.split(maxsplit=1)
+    if len(parts) == 2 and parts[1].strip().upper() == CODE:
+        await update.message.reply_text(pick("code_true"))
+    else:
+        await update.message.reply_text(pick("code_false"))
+
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "Команды терминала:\n"
+        "📡 /start — подключиться к эфиру\n"
+        "🔊 /echo — проверить сигнал\n"
+        "🗒 /log — последняя передача\n"
+        "🔻 /pulse — выбрать маршрут\n"
+        "🔑 /code <код> — ввести скрытый сигнал\n"
+        "🗄 /archive — архив логов\n"
+        "✉️ /cast — отправить запись\n"
+        "🆘 /help — справка\n"
+        "— Используй атмосферные слова, терминал поймёт…"
+    )
+
+# Остальные обработчики (аналогично вашему коду)
 async def send_pulse_keyboard(update, context):
     keyboard = [
         [
@@ -228,29 +259,22 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         USER_STATE[user_id] = "awaiting_cast"
         await update.message.reply_text(pick("cast_start"))
     elif text in HELP_ALIASES:
-        await update.message.reply_text(
-            "Команды терминала:\n"
-            "📡 /start — подключиться к эфиру\n"
-            "🔊 /echo — проверить сигнал\n"
-            "🗒 /log — последняя передача\n"
-            "🔻 /pulse — выбрать маршрут\n"
-            "🔑 /code <код> — ввести скрытый сигнал\n"
-            "🗄 /archive — архив логов\n"
-            "✉️ /cast — отправить запись\n"
-            "🆘 /help — справка\n"
-            "— Используй атмосферные слова, терминал поймёт…"
-        )
+        await help_command(update, context)
     elif text in SCAN_ALIASES:
         await update.message.reply_text("Сканирование частоты... Функция будет доступна позже.")
     else:
         pass
 
 def setup_handlers(application):
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("echo", echo))
+    application.add_handler(CommandHandler("code", code))
+    application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("publish", publish))
     application.add_handler(CommandHandler("log", log))
     application.add_handler(CommandHandler("archive", archive))
     application.add_handler(CommandHandler("cast", cast))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     application.add_handler(CallbackQueryHandler(pulse_button, pattern="^pulse_"))
     application.add_handler(CallbackQueryHandler(archive_button, pattern="^archive_"))
 
