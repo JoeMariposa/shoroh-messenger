@@ -109,14 +109,14 @@ async def code(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "Команды терминала:\n"
-        "📡 /start - start,	контакт	старт - подключиться к эфиру\n"
+        "📡 /start - start, контакт, старт - подключиться к эфиру\n"
         "🔊 /echo - проверка, test, эхо, check - проверить сигнал\n"
-        "🗒 /log - log,	лог, трафик — последняя передача\n"
-        "🔻 /pulse — pulse,	маршрут, выбор - выбрать маршрут\n"
-        "🔑 /code <код> — code,	код, ключ - ввести скрытый сигнал\n"
-        "🗄 /archive — archive,	архив,	старое - архив логов\n"
-        "✉️ /cast 	-	cast,	передать,	сигнал — отправить запись\n"
-        "🆘 /help — help,	помощь,	справка - справочная терминала RX:SHOROH\n"
+        "🗒 /log - log, лог, трафик — последняя передача\n"
+        "🔻 /pulse — pulse, маршрут, выбор - выбрать маршрут\n"
+        "🔑 /code <код> — code, код, ключ - ввести скрытый сигнал\n"
+        "🗄 /archive — archive, архив, старое - архив логов\n"
+        "✉️ /cast - cast, передать, сигнал — отправить запись\n"
+        "🆘 /help — help, помощь, справка - справочная терминала RX:SHOROH\n"
         "— Используй атмосферные слова, терминал поймёт…"
     )
 
@@ -288,33 +288,3 @@ WEBHOOK_PATH = f"/webhook/{TOKEN}"
 WEBHOOK_URL = f"{WEBHOOK_HOST}{WEBHOOK_PATH}"
 
 app = Flask(__name__)
-
-application = Application.builder().token(TOKEN).build()
-setup_handlers(application)
-
-# --- создаём глобальный event loop один раз ---
-loop = asyncio.get_event_loop()
-
-@app.route("/", methods=["GET"])
-def home():
-    return "OK"
-
-@app.route(WEBHOOK_PATH, methods=["POST"])
-def webhook():
-    update = Update.de_json(request.get_json(force=True), application.bot)
-    # не создаём и не закрываем новый loop!
-    asyncio.run_coroutine_threadsafe(process_update_async(update), loop)
-    return "OK"
-
-async def process_update_async(update):
-    if not application._initialized:
-        await application.initialize()
-    await application.process_update(update)
-
-def main():
-    loop.run_until_complete(application.bot.delete_webhook())
-    loop.run_until_complete(application.bot.set_webhook(WEBHOOK_URL))
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
-
-if __name__ == "__main__":
-    main()
