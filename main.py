@@ -1,13 +1,27 @@
 import os
 import random
 from flask import Flask, request
-from telegram import Update
+from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
-    Application, CommandHandler, MessageHandler, ContextTypes, filters
+    Application, CommandHandler, MessageHandler, ContextTypes, filters, CallbackQueryHandler
 )
 
-# ======================================
-# Варианты ответов для команд
+# --- Атмосферные варианты команд ---
+ECHO_ALIASES = {"echo", "проверка", "test", "эхо", "check"}
+START_ALIASES = {"start", "контакт", "старт"}
+LOG_ALIASES = {"log", "лог", "трафик"}
+PULSE_ALIASES = {"pulse", "маршрут", "выбор"}
+CODE_ALIASES = {"code", "код", "ключ"}
+ARCHIVE_ALIASES = {"archive", "архив", "старое"}
+CAST_ALIASES = {"cast", "передать", "сигнал"}
+HELP_ALIASES = {"help", "помощь", "справка"}
+SCAN_ALIASES = {"scan", "скан", "искать"}
+
+# --- Админ и история логов ---
+ADMIN_IDS = {642787882}  # <-- замените на свой id
+LOG_HISTORY = []
+ARCHIVE_PAGE_SIZE = 5  # сколько логов на страницу
+
 RESPONSES = {
     "start": [
         "Линия связи установлена. Терминал активен. Эфир шепчет.",
@@ -66,17 +80,194 @@ RESPONSES = {
         "Это не просто команды. Это ключи. Используй их с умом."
     ]
 }
-CODE = os.environ.get("SECRET_CODE", "209A")  # Код можно задать как переменную среды
 
-# ======================================
-# Вспомогательная функция для выбора случайного ответа
+START_REPLY_OPTIONS = [["/help", "/echo"], ["/log", "/cast"]]
+CODE = os.environ.get("SECRET_CODE", "209A")
+USER_STATE = {}
+
 def pick(key, extra=None):
     resp = random.choice(RESPONSES[key])
     if extra:
         resp = resp.replace("{лог}", extra)
     return resp
 
-# ======================================
+# --- Показываем клавиатуру для выбора маршрута ---
+async def send_pulse_keyboard(update, context):
+    keyboard = [
+        [
+            InlineKeyboardButton("Вперёд", callback_data='pulse_forward'),
+            InlineKeyboardButton("Остаться", callback_data='pulse_stay'),
+            InlineKeyboardButton("Вернуться", callback_data='pulse_back')
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text(pick("pulse"), reply_markup=reply_markup)
+
+# --- Команда публикации нового лога только для админа ---
+async def publish(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.message.from_user.id
+    if user_id not in ADMIN_IDS:
+        await update.message.reply_text("У вас нет прав для публикации лога.")
+        return
+    parts = update.message.text.split(maxsplit=1)
+    if len(parts) < 2:
+        await update.message.reply_text("Используйте: /publish <текст лога>")
+        return
+    log_text = parts[1]
+    LOG_HISTORY.append(log_text)
+    await update.message.reply_text("Лог опубликован.")
+
+# --- Команда /log: показать последний опубликованный лог ---
+async def log(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if LOG_HISTORY:
+        last_log = LOG_HISTORY[-1]
+        await update.message.reply_text(f"ЛОГ# {len(LOG_HISTORY)}\n{last_log}")
+    else:
+        await update.message.reply_text("Логов пока нет.")
+
+# --- Команда /archive: показать первую страницу архива ---
+async def archive(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await send_archive_page(update, context, page=0)
+
+# --- Показывает страницу архива ---
+async def send_archive_page(update_or_query, context, page=0):
+    total = len(LOG_HISTORY)
+    if total == 0:
+        if hasattr(update_or_query, "message") and update_or_query.message:
+            await update_or_query.message.reply_text("В архиве нет логов.")
+        else:
+            await update_or_query.edit_message_text("В архиве нет логов.")
+        return
+
+    max_page = (total - 1) // ARCHIVE_PAGE_SIZE
+    start = page * ARCHIVE_PAGE_SIZE
+    end = min(start + ARCHIVE_PAGE_SIZE, total)
+    keyboard = []
+    for i in range(start, end):
+        button = InlineKeyboardButton(f"ЛОГ#{i+1}", callback_data=f"archive_log_{i}")
+        keyboard.append([button])
+    nav_buttons = []
+    if page > 0:
+        nav_buttons.append(InlineKeyboardButton("⬅️ Назад", callback_data=f"archive_page_{page-1}"))
+    if page < max_page:
+        nav_buttons.append(InlineKeyboardButton("Дальше ➡️", callback_data=f"archive_page_{page+1}"))
+    if nav_buttons:
+        keyboard.append(nav_buttons)
+
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    text = f"Архив логов. Стр. {page+1} из {max_page+1}. Выберите запись:"
+    if hasattr(update_or_query, "message") and update_or_query.message:
+        await update_or_query.message.reply_text(text, reply_markup=reply_markup)
+    else:
+        await update_or_query.edit_message_text(text, reply_markup=reply_markup)
+
+# --- Обработка выбора лога и страниц архива ---
+async def archive_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    data = query.data
+    if data.startswith("archive_log_"):
+        idx = int(data.split("_")[-1])
+        if 0 <= idx < len(LOG_HISTORY):
+            log_text = LOG_HISTORY[idx]
+            await query.edit_message_text(f"ЛОГ#{idx+1}\n{log_text}")
+        else:
+            await query.edit_message_text("Запись не найдена.")
+    elif data.startswith("archive_page_"):
+        page = int(data.split("_")[-1])
+        await send_archive_page(query, context, page)
+
+# --- Обработка нажатия инлайн-кнопок маршрута ---
+async def pulse_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    choice_map = {
+        'pulse_forward': "Маршрут: Вперёд. Мнение учтено и отправлено на частоту.",
+        'pulse_stay': "Маршрут: Остаться. Решение зафиксировано.",
+        'pulse_back': "Маршрут: Вернуться. Сигнал принят."
+    }
+    response = choice_map.get(query.data, "Выбор не опознан.")
+    await query.edit_message_text(response)
+
+# --- Приём пользовательского лога и пересылка админу ---
+async def cast(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.message.from_user.id
+    USER_STATE[user_id] = "awaiting_cast"
+    await update.message.reply_text(pick("cast_start"))
+
+async def handle_cast_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.message.from_user.id
+    if USER_STATE.get(user_id) == "awaiting_cast":
+        USER_STATE.pop(user_id)
+        log_text = update.message.text
+        for admin_id in ADMIN_IDS:
+            try:
+                sender = update.message.from_user.username or user_id
+                await context.bot.send_message(
+                    admin_id,
+                    f"📥 Новый пользовательский ЛОГ от @{sender}:\n{log_text}"
+                )
+            except Exception as e:
+                print(f"Ошибка отправки админу: {e}")
+        await update.message.reply_text(pick("cast_done"))
+        return True
+    return False
+
+# --- Обработка обычных сообщений ---
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text.lower().strip()
+    user_id = update.message.from_user.id
+
+    if await handle_cast_message(update, context):
+        return
+
+    if text in START_ALIASES:
+        reply_markup = ReplyKeyboardMarkup(START_REPLY_OPTIONS, resize_keyboard=True)
+        await update.message.reply_text(pick("start"), reply_markup=reply_markup)
+    elif text in ECHO_ALIASES:
+        await update.message.reply_text(pick("echo"))
+    elif text in LOG_ALIASES:
+        await log(update, context)
+    elif text in PULSE_ALIASES:
+        await send_pulse_keyboard(update, context)
+    elif text.startswith("код") or text.startswith("key") or text.startswith("code") or text.startswith("/code"):
+        parts = text.split(maxsplit=1)
+        if len(parts) == 2 and parts[1].strip().upper() == CODE:
+            await update.message.reply_text(pick("code_true"))
+        else:
+            await update.message.reply_text(pick("code_false"))
+    elif text in ARCHIVE_ALIASES:
+        await archive(update, context)
+    elif text in CAST_ALIASES:
+        USER_STATE[user_id] = "awaiting_cast"
+        await update.message.reply_text(pick("cast_start"))
+    elif text in HELP_ALIASES:
+        await update.message.reply_text(
+            "Команды терминала:\n"
+            "📡 /start — подключиться к эфиру\n"
+            "🔊 /echo — проверить сигнал\n"
+            "🗒 /log — последняя передача\n"
+            "🔻 /pulse — выбрать маршрут\n"
+            "🔑 /code <код> — ввести скрытый сигнал\n"
+            "🗄 /archive — архив логов\n"
+            "✉️ /cast — отправить запись\n"
+            "🆘 /help — справка\n"
+            "— Используй атмосферные слова, терминал поймёт…"
+        )
+    elif text in SCAN_ALIASES:
+        await update.message.reply_text("Сканирование частоты... Функция будет доступна позже.")
+    else:
+        pass
+
+def setup_handlers(application):
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    application.add_handler(CommandHandler("publish", publish))
+    application.add_handler(CommandHandler("log", log))
+    application.add_handler(CommandHandler("archive", archive))
+    application.add_handler(CommandHandler("cast", cast))
+    application.add_handler(CallbackQueryHandler(pulse_button, pattern="^pulse_"))
+    application.add_handler(CallbackQueryHandler(archive_button, pattern="^archive_"))
+
 TOKEN = os.environ["BOT_TOKEN"]
 WEBHOOK_HOST = os.environ.get("WEBHOOK_HOST")
 WEBHOOK_PATH = f"/webhook/{TOKEN}"
@@ -84,65 +275,9 @@ WEBHOOK_URL = f"{WEBHOOK_HOST}{WEBHOOK_PATH}"
 
 app = Flask(__name__)
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(pick("start"))
-
-async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(pick("echo"))
-
-async def log(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Для демонстрации подставляется фраза "данные лога"
-    await update.message.reply_text(pick("log", extra="данные лога"))
-
-async def pulse(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(pick("pulse"))
-
-async def code(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text
-    parts = text.split(maxsplit=1)
-    if len(parts) == 2 and parts[1].strip() == CODE:
-        await update.message.reply_text(pick("code_true"))
-    else:
-        await update.message.reply_text(pick("code_false"))
-
-async def archive(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(pick("archive"))
-
-# Для команды /cast реализуем два этапа: запрос сообщения и подтверждение
-USER_STATE = {}
-async def cast(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    USER_STATE[update.message.from_user.id] = "awaiting_cast"
-    await update.message.reply_text(pick("cast_start"))
-
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.message.from_user.id
-    if USER_STATE.get(user_id) == "awaiting_cast":
-        USER_STATE.pop(user_id)
-        await update.message.reply_text(pick("cast_done"))
-    else:
-        # Можно тут добавить дефолтный ответ, если нужно
-        pass
-
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(pick("help"))
-
-# ======================================
-def setup_handlers(application):
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("echo", echo))
-    application.add_handler(CommandHandler("log", log))
-    application.add_handler(CommandHandler("pulse", pulse))
-    application.add_handler(CommandHandler("code", code))
-    application.add_handler(CommandHandler("archive", archive))
-    application.add_handler(CommandHandler("cast", cast))
-    application.add_handler(CommandHandler("help", help_command))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-
-# ======================================
 def main():
     application = Application.builder().token(TOKEN).build()
     setup_handlers(application)
-    # Настройка webhook для Flask
     @app.route("/", methods=["GET"])
     def home():
         return "OK"
@@ -151,7 +286,6 @@ def main():
         await application.initialize()
         await application.process_update(Update.de_json(request.get_json(force=True), application.bot))
         return "OK"
-    # Установка webhook при запуске
     async def set_webhook():
         await application.bot.delete_webhook()
         await application.bot.set_webhook(WEBHOOK_URL)
@@ -161,4 +295,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
