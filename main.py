@@ -275,22 +275,27 @@ WEBHOOK_URL = f"{WEBHOOK_HOST}{WEBHOOK_PATH}"
 
 app = Flask(__name__)
 
+# --- Главная интеграция с правильной работой event loop ---
+# Telegram Application создаётся один раз и используется всегда!
+application = Application.builder().token(TOKEN).build()
+setup_handlers(application)
+
+@app.route("/", methods=["GET"])
+def home():
+    return "OK"
+
+@app.route(WEBHOOK_PATH, methods=["POST"])
+def webhook():
+    update = Update.de_json(request.get_json(force=True), application.bot)
+    application.create_task(application.process_update(update))
+    return "OK"
+
 def main():
-    application = Application.builder().token(TOKEN).build()
-    setup_handlers(application)
-    @app.route("/", methods=["GET"])
-    def home():
-        return "OK"
-    @app.route(WEBHOOK_PATH, methods=["POST"])
-    async def webhook():
-        await application.initialize()
-        await application.process_update(Update.de_json(request.get_json(force=True), application.bot))
-        return "OK"
-    async def set_webhook():
-        await application.bot.delete_webhook()
-        await application.bot.set_webhook(WEBHOOK_URL)
     import asyncio
-    asyncio.get_event_loop().run_until_complete(set_webhook())
+    # Ставим webhook ОДИН РАЗ
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(application.bot.delete_webhook())
+    loop.run_until_complete(application.bot.set_webhook(WEBHOOK_URL))
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
 
 if __name__ == "__main__":
