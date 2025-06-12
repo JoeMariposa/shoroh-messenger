@@ -18,10 +18,9 @@ CAST_ALIASES = {"cast", "передать", "сигнал"}
 HELP_ALIASES = {"help", "помощь", "справка"}
 SCAN_ALIASES = {"scan", "скан", "искать"}
 
-# --- Админ и история логов ---
-ADMIN_IDS = {642787882}  # <-- замените на свой id
+ADMIN_IDS = {642787882}
 LOG_HISTORY = []
-ARCHIVE_PAGE_SIZE = 5  # сколько логов на страницу
+ARCHIVE_PAGE_SIZE = 5
 
 RESPONSES = {
     "start": [
@@ -92,7 +91,6 @@ def pick(key, extra=None):
         resp = resp.replace("{лог}", extra)
     return resp
 
-# --- Показываем клавиатуру для выбора маршрута ---
 async def send_pulse_keyboard(update, context):
     keyboard = [
         [
@@ -104,7 +102,6 @@ async def send_pulse_keyboard(update, context):
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text(pick("pulse"), reply_markup=reply_markup)
 
-# --- Команда публикации нового лога только для админа ---
 async def publish(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     if user_id not in ADMIN_IDS:
@@ -118,7 +115,6 @@ async def publish(update: Update, context: ContextTypes.DEFAULT_TYPE):
     LOG_HISTORY.append(log_text)
     await update.message.reply_text("Лог опубликован.")
 
-# --- Команда /log: показать последний опубликованный лог ---
 async def log(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if LOG_HISTORY:
         last_log = LOG_HISTORY[-1]
@@ -126,11 +122,9 @@ async def log(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text("Логов пока нет.")
 
-# --- Команда /archive: показать первую страницу архива ---
 async def archive(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await send_archive_page(update, context, page=0)
 
-# --- Показывает страницу архива ---
 async def send_archive_page(update_or_query, context, page=0):
     total = len(LOG_HISTORY)
     if total == 0:
@@ -139,7 +133,6 @@ async def send_archive_page(update_or_query, context, page=0):
         else:
             await update_or_query.edit_message_text("В архиве нет логов.")
         return
-
     max_page = (total - 1) // ARCHIVE_PAGE_SIZE
     start = page * ARCHIVE_PAGE_SIZE
     end = min(start + ARCHIVE_PAGE_SIZE, total)
@@ -154,7 +147,6 @@ async def send_archive_page(update_or_query, context, page=0):
         nav_buttons.append(InlineKeyboardButton("Дальше ➡️", callback_data=f"archive_page_{page+1}"))
     if nav_buttons:
         keyboard.append(nav_buttons)
-
     reply_markup = InlineKeyboardMarkup(keyboard)
     text = f"Архив логов. Стр. {page+1} из {max_page+1}. Выберите запись:"
     if hasattr(update_or_query, "message") and update_or_query.message:
@@ -162,7 +154,6 @@ async def send_archive_page(update_or_query, context, page=0):
     else:
         await update_or_query.edit_message_text(text, reply_markup=reply_markup)
 
-# --- Обработка выбора лога и страниц архива ---
 async def archive_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -178,7 +169,6 @@ async def archive_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         page = int(data.split("_")[-1])
         await send_archive_page(query, context, page)
 
-# --- Обработка нажатия инлайн-кнопок маршрута ---
 async def pulse_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -190,7 +180,6 @@ async def pulse_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     response = choice_map.get(query.data, "Выбор не опознан.")
     await query.edit_message_text(response)
 
-# --- Приём пользовательского лога и пересылка админу ---
 async def cast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     USER_STATE[user_id] = "awaiting_cast"
@@ -214,14 +203,11 @@ async def handle_cast_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         return True
     return False
 
-# --- Обработка обычных сообщений ---
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.lower().strip()
     user_id = update.message.from_user.id
-
     if await handle_cast_message(update, context):
         return
-
     if text in START_ALIASES:
         reply_markup = ReplyKeyboardMarkup(START_REPLY_OPTIONS, resize_keyboard=True)
         await update.message.reply_text(pick("start"), reply_markup=reply_markup)
@@ -269,7 +255,6 @@ def setup_handlers(application):
     application.add_handler(CallbackQueryHandler(pulse_button, pattern="^pulse_"))
     application.add_handler(CallbackQueryHandler(archive_button, pattern="^archive_"))
 
-# --- Flask и Telegram Application интеграция ---
 TOKEN = os.environ["BOT_TOKEN"]
 WEBHOOK_HOST = os.environ.get("WEBHOOK_HOST")
 WEBHOOK_PATH = f"/webhook/{TOKEN}"
@@ -277,17 +262,8 @@ WEBHOOK_URL = f"{WEBHOOK_HOST}{WEBHOOK_PATH}"
 
 app = Flask(__name__)
 
-# --- Глобальное приложение Telegram (инициализируется один раз) ---
-try:
-    loop = asyncio.get_event_loop()
-except RuntimeError:
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
 application = Application.builder().token(TOKEN).build()
 setup_handlers(application)
-loop.run_until_complete(application.initialize())
-loop.run_until_complete(application.bot.delete_webhook())
-loop.run_until_complete(application.bot.set_webhook(WEBHOOK_URL))
 
 @app.route("/", methods=["GET"])
 def home():
@@ -296,11 +272,15 @@ def home():
 @app.route(WEBHOOK_PATH, methods=["POST"])
 def webhook():
     update = Update.de_json(request.get_json(force=True), application.bot)
-    loop = asyncio.get_event_loop()
-    loop.create_task(application.process_update(update))
+    # Для каждого запроса создаём отдельный event loop:
+    asyncio.run(application.initialize())  # гарантируем инициализацию
+    asyncio.run(application.process_update(update))
     return "OK"
 
 def main():
+    # Устанавливаем webhook при запуске
+    asyncio.run(application.bot.delete_webhook())
+    asyncio.run(application.bot.set_webhook(WEBHOOK_URL))
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
 
 if __name__ == "__main__":
