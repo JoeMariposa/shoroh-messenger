@@ -7,7 +7,6 @@ from telegram.ext import (
 )
 import asyncio
 
-# --- Атмосферные варианты команд ---
 ECHO_ALIASES = {"echo", "проверка", "test", "эхо", "check"}
 START_ALIASES = {"start", "контакт", "старт"}
 LOG_ALIASES = {"log", "лог", "трафик"}
@@ -272,15 +271,18 @@ def home():
 @app.route(WEBHOOK_PATH, methods=["POST"])
 def webhook():
     update = Update.de_json(request.get_json(force=True), application.bot)
-    # Для каждого запроса создаём отдельный event loop:
-    asyncio.run(application.initialize())  # гарантируем инициализацию
-    asyncio.run(application.process_update(update))
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.run_until_complete(application.initialize())
+    loop.run_until_complete(application.process_update(update))
+    loop.close()
     return "OK"
 
 def main():
-    # Устанавливаем webhook при запуске
-    asyncio.run(application.bot.delete_webhook())
-    asyncio.run(application.bot.set_webhook(WEBHOOK_URL))
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.run_until_complete(application.bot.delete_webhook())
+    loop.run_until_complete(application.bot.set_webhook(WEBHOOK_URL))
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
 
 if __name__ == "__main__":
