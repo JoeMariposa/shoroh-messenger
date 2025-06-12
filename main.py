@@ -91,7 +91,7 @@ def pick(key, extra=None):
         resp = resp.replace("{лог}", extra)
     return resp
 
-# Команды с /
+# --- Команды с /
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup = ReplyKeyboardMarkup(START_REPLY_OPTIONS, resize_keyboard=True)
     await update.message.reply_text(pick("start"), reply_markup=reply_markup)
@@ -111,8 +111,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Команды терминала:\n"
         "📡 /start - start,	контакт	старт - подключиться к эфиру\n"
         "🔊 /echo - проверка, test, эхо, check - проверить сигнал\n"
-        "🗒 /log - log,	лог, трафик— последняя передача\n"
-        "🔻 /pulse — pulse,	маршрут, выбор -	выбрать маршрут\n"
+        "🗒 /log - log,	лог, трафик — последняя передача\n"
+        "🔻 /pulse — pulse,	маршрут, выбор - выбрать маршрут\n"
         "🔑 /code <код> — code,	код, ключ - ввести скрытый сигнал\n"
         "🗄 /archive — archive,	архив,	старое - архив логов\n"
         "✉️ /cast 	-	cast,	передать,	сигнал — отправить запись\n"
@@ -120,7 +120,10 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "— Используй атмосферные слова, терминал поймёт…"
     )
 
-# Остальные обработчики (аналогично вашему коду)
+async def pulse_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await send_pulse_keyboard(update, context)
+
+# --- Остальные обработчики ---
 async def send_pulse_keyboard(update, context):
     keyboard = [
         [
@@ -268,6 +271,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def setup_handlers(application):
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("echo", echo))
+    application.add_handler(CommandHandler("pulse", pulse_command))
     application.add_handler(CommandHandler("code", code))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("publish", publish))
